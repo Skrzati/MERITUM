@@ -31,6 +31,12 @@ public class SchemaAdminService {
         return schemas.findAllByOrderByEffectiveFromDesc();
     }
 
+    /** Odczyt pojedynczej wersji (katalog kryteriów) — dostępny dla każdego zalogowanego użytkownika. */
+    @Transactional(readOnly = true)
+    public SchemaVersion get(Long id) {
+        return schemas.findById(id).orElseThrow(() -> Access.notFound("Schemat", id));
+    }
+
     public SchemaVersion create(User admin, String versionCode, LocalDate effectiveFrom, int periodMonths,
                                 JsonNode config) {
         requireRole(admin, Role.KPRM_ADMIN);

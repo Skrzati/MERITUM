@@ -39,7 +39,13 @@
 │   ├── app/consistency.py    # deterministyczne reguły spójności arkusza
 │   ├── app/guardrails.py     # brak propozycji punktów, brak treści medycznych, disclaimer AI Act
 │   └── tests/                # pytest: test_pii, test_consistency, test_api
-└── frontend/                 # (etap 2+) aplikacja webowa — na razie pusta
+└── frontend/                 # Next.js 16 (App Router) + TypeScript + Tailwind 3, React 19
+    ├── Dockerfile            # node:22-alpine, output standalone, user non-root
+    ├── next.config.mjs       # rewrites: /api/ai/* -> ai-gateway, /api/* -> backend-core (wyliczane w czasie builda!)
+    └── src/
+        ├── app/              # strony: / (pulpit), /cycles/[id], /hr, /stats, /admin
+        ├── components/       # Header (role switcher), UserProvider, RoleGate, ui.tsx (kit), cycle/* (zakładki)
+        └── lib/              # api.ts (fetch + X-Demo-User-Id), types.ts (kontrakty DTO), labels.ts, useAsync.ts
 ```
 
 ## Kontenery (`make up`)
@@ -49,6 +55,7 @@
 | oceny-gotenberg | gotenberg/gotenberg:8 | 3001 | — |
 | oceny-backend-core | build `backend-core/` | 8080 | postgres (healthy), gotenberg (healthy) |
 | oceny-ai-gateway | build `ai-gateway/` | 8000 | — (env `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`) |
+| oceny-frontend | build `frontend/` | 3000 | backend-core (healthy), ai-gateway (healthy) |
 
 W sieci Dockera serwisy adresują się po nazwach (`postgres:5432`, `gotenberg:3000`).
 
@@ -75,6 +82,7 @@ Błędy: 403 brak uprawnień, 404 brak zasobu, 409 niedozwolone przejście stanu
 | POST | `/api/hr/import-csv` (multipart `file`) | HR | `full_name,email,role,is_civil_servant[,supervisor_email]` |
 | GET | `/api/hr/employees/{id}/gdpr-export` | HR | art. 15 RODO |
 | GET/POST | `/api/admin/schemas` | KPRM_ADMIN | wersje schematu („prawo jako kod”) |
+| GET | `/api/schemas/{id}` | każdy zalogowany | odczyt wersji schematu (katalog kryteriów dla UI) |
 | GET | `/api/stats/summary` | DG, HR | tylko agregaty |
 | GET | `/api/cycles/{id}/pdf` | jak `GET /api/cycles/{id}` | PDF/A arkusza (Gotenberg); część III tylko urzędnik SC + wniosek; audyt `PDF_EXPORTED` |
 
@@ -142,6 +150,15 @@ Hibernate `ddl-auto: validate` — schemat zmienia WYŁĄCZNIE Flyway.
 - Demo nie może zależeć od sieci: brak klucza lub błąd LLM -> odpowiedzi deterministyczne.
 - Kontrola spójności jest deterministyczna (reguły), nie LLM.
 
+### Frontend
+- Przeglądarka rozmawia wyłącznie z Next.js (proxy przez rewrites) — brak CORS, adresy usług tylko w build args.
+- Wszystkie wywołania przez `lib/api.ts` (automatyczny `X-Demo-User-Id`, błędy RFC 7807 -> `ApiError`).
+- Typy w `lib/types.ts` muszą odpowiadać `Dtos.java` / modelom Pydantic — zmiana DTO = zmiana typów.
+- Uprawnienia w UI wynikają z relacji do cyklu (evaluatorId/employeeId), tak jak w backendzie; UI tylko ukrywa akcje, decyduje backend.
+- Reguły prawa nie są duplikowane w UI: katalog kryteriów z `/api/schemas/{id}`, wynik oceny z silnika reguł (średnia w UI to tylko podgląd).
+- Dostępność: WCAG 2.1 AA — etykiety pól, focus-visible, role tablist/tab, `aria-*`, kontrast slate/navy na bieli.
+- Statystyki: próg anonimizacji k=3 (liczności 1–2 ukryte jako „<3”).
+
 ### Baza / migracje
 - Migracje są niezmienne po wypchnięciu — zmiana = nowy plik `V{n}__opis.sql`.
 - Seed demo tylko w migracjach z `seed` w nazwie.
@@ -159,4 +176,5 @@ make logs      # logi
 make build     # mvn clean verify lokalnie
 make test      # testy backend-core
 make test-ai   # testy ai-gateway (venv w ai-gateway/.venv)
+make build-fe  # npm ci + next build (frontend)
 ```

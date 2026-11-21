@@ -34,7 +34,7 @@ public class SheetHtmlRenderer {
             th { background: #f2f2f2; font-weight: bold; text-align: left; }
             td.c, th.c { text-align: center; width: 9%; }
             td.label { width: 38%; font-weight: bold; background: #fafafa; }
-            .box { min-height: 48px; white-space: pre-wrap; }
+            .box { height: 56px; white-space: pre-wrap; }
             .sign { margin-top: 26px; display: flex; justify-content: space-between; font-size: 9pt; }
             .sign div { width: 44%; border-top: 1px dotted #000; text-align: center; padding-top: 3px; }
             .note { font-size: 9pt; border: 1px solid #000; padding: 6px; margin-top: 8px; }

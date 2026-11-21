@@ -9,7 +9,9 @@ Bez `make`: `cp infra/.env.example infra/.env && docker compose -f infra/docker-
 
 | Serwis | URL |
 |---|---|
+| **Frontend (demo)** | **http://localhost:3000** |
 | backend-core API | http://localhost:8080/api/health |
+| ai-gateway (docs) | http://localhost:8000/docs |
 | Swagger UI | http://localhost:8080/swagger-ui.html |
 | Gotenberg | http://localhost:3001 |
 | PostgreSQL | localhost:5432 |

@@ -44,6 +44,7 @@ dist/
 .next/
 .nuxt/
 coverage/
+*.tsbuildinfo
 .turbo/
 npm-debug.log*
 yarn-error.log*

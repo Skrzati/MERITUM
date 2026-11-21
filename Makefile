@@ -1,6 +1,6 @@
 COMPOSE := docker compose -f infra/docker-compose.yml
 
-.PHONY: up down logs ps reset build test test-ai
+.PHONY: up down logs ps reset build test test-ai build-fe
 
 infra/.env:
 	cp infra/.env.example infra/.env
@@ -28,3 +28,6 @@ test: ## Testy backend-core
 
 test-ai: ## Testy ai-gateway (wymaga Python 3.9+)
 	cd ai-gateway && python3 -m venv .venv && .venv/bin/pip install -q -r requirements-dev.txt && .venv/bin/python -m pytest -q
+
+build-fe: ## Build frontendu (TypeScript + Next.js)
+	cd frontend && npm ci && npm run build
