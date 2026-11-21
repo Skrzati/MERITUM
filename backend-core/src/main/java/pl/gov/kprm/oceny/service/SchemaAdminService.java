@@ -9,6 +9,8 @@ import pl.gov.kprm.oceny.domain.SchemaVersion;
 import pl.gov.kprm.oceny.domain.User;
 import pl.gov.kprm.oceny.repository.SchemaVersionRepository;
 import pl.gov.kprm.oceny.rules.CriteriaCatalog;
+import pl.gov.kprm.oceny.rules.RuleViolationException;
+import pl.gov.kprm.oceny.rules.SchemaRules;
 
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
@@ -61,6 +63,10 @@ public class SchemaAdminService {
             throw conflict("Wersja schematu " + versionCode + " już istnieje");
         }
         CriteriaCatalog.from(config);
+        List<String> ruleViolations = SchemaRules.violations(config);
+        if (!ruleViolations.isEmpty()) {
+            throw new RuleViolationException(ruleViolations);
+        }
         SchemaVersion schema = new SchemaVersion();
         schema.setVersionCode(versionCode);
         schema.setEffectiveFrom(effectiveFrom);

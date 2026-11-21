@@ -165,6 +165,15 @@ export interface Cycle {
   iprzEmployeeAckAt: string | null;
 }
 
+export interface SelfPrep {
+  cycleId: number;
+  achievements: string | null;
+  challenges: string | null;
+  developmentNeeds: string | null;
+  sharedWithEvaluator: boolean;
+  updatedAt: string | null;
+}
+
 export interface FeedbackCheckin {
   id: number;
   cycleId: number;

@@ -290,6 +290,38 @@ class ProcessCompletionIntegrationTest {
         assertThat(prev.path("level").asText()).isEqualTo("MEETS");
     }
 
+    @Test
+    void amendmentSchemaDeadlinesApplyToNewCyclesWithoutCodeChanges() throws Exception {
+        JsonNode config = fetch("/api/admin/schemas", ADMIN).get(0).path("config").deepCopy();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) config).set("levelThresholds", json.readTree("[2, 4, 6, 9, 8]"));
+        send(post("/api/admin/schemas"), ADMIN, json.writeValueAsString(java.util.Map.of("versionCode", "zle-progi",
+                "effectiveFrom", LocalDate.now().toString(), "periodMonths", 24, "config", config)), 422);
+
+        ((com.fasterxml.jackson.databind.node.ObjectNode) config).remove("levelThresholds");
+        ((com.fasterxml.jackson.databind.node.ObjectNode) config).set("deadlines", json.readTree("{\"initialInterviewDays\": 14}"));
+        send(post("/api/admin/schemas"), ADMIN, json.writeValueAsString(java.util.Map.of("versionCode", "nowelizacja-2027",
+                "effectiveFrom", LocalDate.now().toString(), "periodMonths", 24, "config", config)), 201);
+        JsonNode created = send(post("/api/cycles"), HR, "{\"employeeId\": 11, \"startDate\": \"2026-12-01\"}", 201);
+        assertThat(created.path("criteriaDeadline").asText()).as("14 dni z nowelizacji").isEqualTo("2026-12-15");
+        assertThat(fetch("/api/cycles/2", DG).path("criteriaDeadline").asText()).as("stary cykl: 30 dni (§ 13)")
+                .isEqualTo(LocalDate.parse(fetch("/api/cycles/2", DG).path("startDate").asText()).plusDays(30).toString());
+    }
+
+    @Test
+    void selfPrepIsPrivateUntilSharedWithEvaluator() throws Exception {
+        send(put("/api/cycles/1/self-prep"), EMPLOYEE,
+                "{\"achievements\": \"Wdrożenie modułu\", \"challenges\": \"Terminy\", \"sharedWithEvaluator\": false}", 200);
+        JsonNode hidden = fetch("/api/cycles/1/self-prep", EVALUATOR);
+        assertThat(hidden.path("sharedWithEvaluator").asBoolean()).isFalse();
+        assertThat(hidden.path("achievements").isNull()).as("treść nieudostępniona nie opuszcza serwera").isTrue();
+        assertThat(fetch("/api/cycles/1/self-prep", EMPLOYEE).path("achievements").asText()).isEqualTo("Wdrożenie modułu");
+        expect(as(get("/api/cycles/1/self-prep"), HR), 403);
+        send(put("/api/cycles/1/self-prep"), EVALUATOR, "{\"achievements\": \"podmiana\"}", 403);
+
+        send(put("/api/cycles/1/self-prep"), EMPLOYEE, "{\"achievements\": \"Wdrożenie modułu\", \"sharedWithEvaluator\": true}", 200);
+        assertThat(fetch("/api/cycles/1/self-prep", EVALUATOR).path("achievements").asText()).isEqualTo("Wdrożenie modułu");
+    }
+
     private JsonNode notification(long userId, String type, long cycleId) throws Exception {
         for (JsonNode n : fetch("/api/notifications", userId)) {
             if (type.equals(n.path("type").asText()) && n.path("cycleId").asLong() == cycleId) return n;

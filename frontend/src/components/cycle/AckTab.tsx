@@ -129,6 +129,13 @@ export function AckTab({ view }: { view: CycleView }) {
             <Button variant="secondary" onClick={ezd} busy={busy === "ezd"}>
               Eksport pakietu pod EZD RP (JSON)
             </Button>
+            <Button
+              variant="secondary"
+              busy={busy === "zip"}
+              onClick={() => exportFile("zip", () => download(`/api/cycles/${cycle.id}/ezd-zip`, `ezd-paczka-cykl-${cycle.id}.zip`))}
+            >
+              Pobierz paczkę EZD RP (.zip)
+            </Button>
           </div>
           <p className="mt-1 text-xs text-slate-600">
             Arkusz wg wzoru z rozporządzenia (Gotenberg, PDF/A-2b) oraz metadane dokumentu do rejestracji w EZD RP (KRI).

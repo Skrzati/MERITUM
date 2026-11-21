@@ -5,7 +5,7 @@ import { AiDisclaimer, Alert, Button, Card, Field, inputClass, MaskedPrompt, Mod
 import { useUser } from "@/components/UserProvider";
 import { api, coreAi, download } from "@/lib/api";
 import { formatDate } from "@/lib/labels";
-import type { FeedbackCheckin, InterviewPrepResponse, InterviewStage } from "@/lib/types";
+import type { FeedbackCheckin, InterviewPrepResponse, InterviewStage, SelfPrep } from "@/lib/types";
 import { useAsync } from "@/lib/useAsync";
 import type { CycleView } from "./context";
 
@@ -143,6 +143,7 @@ export function InterviewTab({ view }: { view: CycleView }) {
       </div>
 
       <div className="space-y-6 xl:col-span-2">
+        <SelfPrepCard view={view} />
         <CheckinsCard view={view} />
 
         <Card title="Zaproszenie do kalendarza">
@@ -276,5 +277,95 @@ function CheckinsCard({ view }: { view: CycleView }) {
       )}
       <ProblemAlert error={error} />
     </Card>
+  );
+}
+
+/** „Moje przygotowanie do rozmowy” — edytuje oceniany; przełożony widzi treść dopiero po udostępnieniu. */
+function SelfPrepCard({ view }: { view: CycleView }) {
+  const { cycle, isEvaluator, isEmployee } = view;
+  const prep = useAsync(
+    () => (isEvaluator || isEmployee ? api<SelfPrep>(`/api/cycles/${cycle.id}/self-prep`) : Promise.resolve(null)),
+    [cycle.id],
+  );
+  if (!isEvaluator && !isEmployee) return null;
+  return (
+    <Card title={isEmployee ? "Moje przygotowanie do rozmowy" : "Przygotowanie ocenianego"}>
+      {prep.data && (isEmployee ? <SelfPrepForm cycleId={cycle.id} initial={prep.data} /> : <SelfPrepPreview prep={prep.data} />)}
+      <ProblemAlert error={prep.error} />
+    </Card>
+  );
+}
+
+function SelfPrepPreview({ prep }: { prep: SelfPrep }) {
+  if (!prep.sharedWithEvaluator) return <p className="text-sm text-slate-700">Oceniany nie udostępnił jeszcze swojego przygotowania.</p>;
+  return (
+    <dl className="space-y-2 text-sm">
+      {[
+        ["Osiągnięcia", prep.achievements],
+        ["Trudności", prep.challenges],
+        ["Potrzeby rozwojowe", prep.developmentNeeds],
+      ].map(([label, value]) => (
+        <div key={label}>
+          <dt className="font-semibold">{label}</dt>
+          <dd className="whitespace-pre-wrap">{value || "—"}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function SelfPrepForm({ cycleId, initial }: { cycleId: number; initial: SelfPrep }) {
+  const [form, setForm] = useState({
+    achievements: initial.achievements ?? "",
+    challenges: initial.challenges ?? "",
+    developmentNeeds: initial.developmentNeeds ?? "",
+    sharedWithEvaluator: initial.sharedWithEvaluator,
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [saved, setSaved] = useState(false);
+
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    setSaved(false);
+    try {
+      await api(`/api/cycles/${cycleId}/self-prep`, { method: "PUT", body: form });
+      setSaved(true);
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      {(
+        [
+          ["achievements", "Moje osiągnięcia w okresie oceny"],
+          ["challenges", "Trudności i czynniki niezależne ode mnie"],
+          ["developmentNeeds", "Czego potrzebuję, aby się rozwijać"],
+        ] as const
+      ).map(([key, label]) => (
+        <Field key={key} label={label}>
+          <textarea className={inputClass} rows={2} value={form[key]} onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))} />
+        </Field>
+      ))}
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          className="h-4 w-4 accent-navy-700"
+          checked={form.sharedWithEvaluator}
+          onChange={(e) => setForm((f) => ({ ...f, sharedWithEvaluator: e.target.checked }))}
+        />
+        Udostępnij przełożonemu przed rozmową
+      </label>
+      <Button onClick={save} busy={busy}>
+        Zapisz
+      </Button>
+      {saved && <Alert tone="green">Zapisano{form.sharedWithEvaluator ? " i udostępniono przełożonemu" : " (prywatnie)"}.</Alert>}
+      <ProblemAlert error={error} />
+    </div>
   );
 }

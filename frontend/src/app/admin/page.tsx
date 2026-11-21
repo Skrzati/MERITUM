@@ -25,6 +25,18 @@ interface CriterionRow {
   added: boolean;
 }
 
+/** Terminy i progi „prawa jako kodu” (config.deadlines / config.levelThresholds) — domyślnie rozporządzenie z 2016 r. */
+const DEADLINE_FIELDS = [
+  { key: "initialInterviewDays", label: "Rozmowa rozpoczynająca (dni)", fallback: 30 },
+  { key: "initialInterviewAfterNegativeDays", label: "… po ocenie negatywnej (dni)", fallback: 7 },
+  { key: "appealDays", label: "Sprzeciw (dni)", fallback: 7 },
+  { key: "appealDecisionDays", label: "Rozpatrzenie sprzeciwu (dni)", fallback: 14 },
+  { key: "reevaluationMonths", label: "Ponowna ocena (mies.)", fallback: 6 },
+] as const;
+type DeadlineKey = (typeof DEADLINE_FIELDS)[number]["key"];
+const DEFAULT_THRESHOLDS = [2, 4, 6, 8, 9];
+const LEVEL_NAMES = ["znacznie poniżej", "poniżej", "na poziomie", "powyżej", "znacznie powyżej"];
+
 interface Draft {
   versionCode: string;
   effectiveFrom: string;
@@ -32,6 +44,8 @@ interface Draft {
   maxAdditional: number;
   allowCustom: boolean;
   rows: CriterionRow[];
+  deadlines: Record<DeadlineKey, number>;
+  thresholds: number[];
 }
 
 export default function AdminPage() {
@@ -44,7 +58,11 @@ export default function AdminPage() {
 
 function draftFrom(schema: Schema): Draft {
   const c = schema.config;
+  const d = (c.deadlines ?? {}) as Partial<Record<DeadlineKey, number>>;
+  const t = Array.isArray(c.levelThresholds) && c.levelThresholds.length === 5 ? (c.levelThresholds as number[]) : DEFAULT_THRESHOLDS;
   return {
+    deadlines: Object.fromEntries(DEADLINE_FIELDS.map((f) => [f.key, d[f.key] ?? f.fallback])) as Record<DeadlineKey, number>,
+    thresholds: [...t],
     versionCode: `${schema.versionCode}-nowelizacja`,
     effectiveFrom: today(),
     periodMonths: schema.periodMonths,
@@ -70,6 +88,8 @@ function configFrom(base: SchemaConfig, d: Draft): SchemaConfig {
       return description.length ? { code: r.code, name: r.name.trim(), description } : { code: r.code, name: r.name.trim() };
     }),
     mandatoryBySheet: Object.fromEntries(SHEETS.map((s) => [s, d.rows.filter((r) => r.mandatory[s]).map((r) => r.code)])),
+    deadlines: d.deadlines,
+    levelThresholds: d.thresholds,
   };
 }
 
@@ -231,6 +251,39 @@ function SchemaAdmin() {
               Zezwól na kryteria własne
             </label>
           </div>
+
+          <fieldset className="mt-6 rounded border border-slate-300 p-3">
+            <legend className="px-1 text-sm font-bold text-gov-text">Terminy i progi (nowelizacja — bez zmiany kodu)</legend>
+            <div className="grid gap-3 sm:grid-cols-5">
+              {DEADLINE_FIELDS.map((f) => (
+                <Field key={f.key} label={f.label} hint={`Rozporządzenie 2016: ${f.fallback}`}>
+                  <input
+                    type="number"
+                    min={1}
+                    className={inputClass}
+                    value={draft.deadlines[f.key]}
+                    onChange={(e) => update({ deadlines: { ...draft.deadlines, [f.key]: Number(e.target.value) } })}
+                  />
+                </Field>
+              ))}
+            </div>
+            <p className="mb-1 mt-3 text-sm font-semibold text-gov-text">Górne progi średniej dla poziomów (włącznie, ostatni = 9)</p>
+            <div className="grid gap-3 sm:grid-cols-5">
+              {draft.thresholds.map((v, i) => (
+                <Field key={LEVEL_NAMES[i]} label={LEVEL_NAMES[i]}>
+                  <input
+                    type="number"
+                    step={0.1}
+                    min={1}
+                    max={9}
+                    className={inputClass}
+                    value={v}
+                    onChange={(e) => update({ thresholds: draft.thresholds.map((x, j) => (j === i ? Number(e.target.value) : x)) })}
+                  />
+                </Field>
+              ))}
+            </div>
+          </fieldset>
 
           <div className="mt-6 overflow-x-auto">
             <table className="w-full text-left text-sm">

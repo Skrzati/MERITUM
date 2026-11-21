@@ -57,6 +57,10 @@ public final class Requests {
                                  @NotNull LocalDate evaluatedOn) {
     }
 
+    public record SelfPrepRequest(@Size(max = 5000) String achievements, @Size(max = 5000) String challenges,
+                                  @Size(max = 5000) String developmentNeeds, boolean sharedWithEvaluator) {
+    }
+
     public record CheckinRequest(LocalDate conductedOn, @NotBlank @Size(max = 255) String topic,
                                  @NotBlank @Size(max = 5000) String summary, @Size(max = 2000) String nextSteps,
                                  boolean sharedWithEmployee) {

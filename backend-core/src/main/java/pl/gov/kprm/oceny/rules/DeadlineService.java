@@ -95,7 +95,11 @@ public class DeadlineService {
     }
 
     public LocalDate appealDecisionDeadline(LocalDate appealedOn) {
-        return shiftToWorkingDay(appealedOn.plusDays(APPEAL_DECISION_DAYS));
+        return appealDecisionDeadline(appealedOn, SchemaRules.DEFAULT);
+    }
+
+    public LocalDate appealDecisionDeadline(LocalDate appealedOn, SchemaRules rules) {
+        return shiftToWorkingDay(appealedOn.plusDays(rules.appealDecisionDays()));
     }
 
     public LocalDate mandatoryGradeDeadline(LocalDate acknowledgedAt) {
@@ -104,16 +108,28 @@ public class DeadlineService {
 
     /** Ponowna ocena po negatywnej — 6 miesięcy, nieobecności NIE przedłużają terminu. */
     public LocalDate reevaluationDue(LocalDate start) {
-        return shiftToWorkingDay(start.plusMonths(REEVALUATION_MONTHS));
+        return reevaluationDue(start, SchemaRules.DEFAULT);
+    }
+
+    public LocalDate reevaluationDue(LocalDate start, SchemaRules rules) {
+        return shiftToWorkingDay(start.plusMonths(rules.reevaluationMonths()));
     }
 
     public LocalDate initialInterviewDeadline(LocalDate start, boolean afterNegative) {
-        int days = afterNegative ? INITIAL_INTERVIEW_AFTER_NEGATIVE_DAYS : INITIAL_INTERVIEW_DAYS;
+        return initialInterviewDeadline(start, afterNegative, SchemaRules.DEFAULT);
+    }
+
+    public LocalDate initialInterviewDeadline(LocalDate start, boolean afterNegative, SchemaRules rules) {
+        int days = afterNegative ? rules.initialInterviewAfterNegativeDays() : rules.initialInterviewDays();
         return shiftToWorkingDay(start.plusDays(days));
     }
 
     public LocalDate appealDeadline(LocalDate acknowledgedAt) {
-        return shiftToWorkingDay(acknowledgedAt.plusDays(APPEAL_DAYS));
+        return appealDeadline(acknowledgedAt, SchemaRules.DEFAULT);
+    }
+
+    public LocalDate appealDeadline(LocalDate acknowledgedAt, SchemaRules rules) {
+        return shiftToWorkingDay(acknowledgedAt.plusDays(rules.appealDays()));
     }
 
     static LocalDate easterSunday(int year) {

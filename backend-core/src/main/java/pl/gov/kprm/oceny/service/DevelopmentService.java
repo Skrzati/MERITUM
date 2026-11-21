@@ -29,6 +29,47 @@ public class DevelopmentService {
     private final IprzItemRepository iprzItems;
     private final AuditService audit;
     private final Clock clock;
+    private final pl.gov.kprm.oceny.repository.EmployeeSelfPrepRepository selfPreps;
+
+    public record SelfPrepInput(String achievements, String challenges, String developmentNeeds, boolean shared) {
+    }
+
+    /**
+     * Oceniany widzi swoje przygotowanie; oceniający/zastępca — tylko udostępnione (inaczej pusty, nieudostępniony stan);
+     * kadry i DG — brak dostępu.
+     */
+    @Transactional(readOnly = true)
+    public EmployeeSelfPrep selfPrep(Long cycleId, User user) {
+        EvaluationCycle cycle = workflow.get(cycleId, user);
+        EmployeeSelfPrep prep = selfPreps.findById(cycle.getId()).orElse(null);
+        if (user.getId().equals(cycle.getEmployeeId())) {
+            return prep != null ? prep : empty(cycle.getId());
+        }
+        if (workflow.canActAsEvaluator(cycle, user) || user.getId().equals(cycle.getEvaluatorId())) {
+            return prep != null && prep.isSharedWithEvaluator() ? prep : empty(cycle.getId());
+        }
+        throw forbidden("Przygotowanie do rozmowy widzi oceniany i — po udostępnieniu — przełożony");
+    }
+
+    public EmployeeSelfPrep saveSelfPrep(Long cycleId, User user, SelfPrepInput in) {
+        EvaluationCycle cycle = workflow.asEmployee(cycleId, user);
+        EmployeeSelfPrep prep = selfPreps.findById(cycle.getId()).orElseGet(() -> empty(cycle.getId()));
+        prep.setAchievements(in.achievements());
+        prep.setChallenges(in.challenges());
+        prep.setDevelopmentNeeds(in.developmentNeeds());
+        prep.setSharedWithEvaluator(in.shared());
+        prep.setUpdatedAt(OffsetDateTime.now(clock));
+        EmployeeSelfPrep saved = selfPreps.save(prep);
+        // treść jest prywatna — w audycie wyłącznie fakt zapisu i udostępnienia
+        audit.log(user, cycle.getOfficeId(), "SELF_PREP_SAVED", AuditService.CYCLE, cycle.getId(), Map.of("shared", in.shared()));
+        return saved;
+    }
+
+    private static EmployeeSelfPrep empty(Long cycleId) {
+        EmployeeSelfPrep p = new EmployeeSelfPrep();
+        p.setCycleId(cycleId);
+        return p;
+    }
 
     public record CheckinInput(LocalDate conductedOn, String topic, String summary, String nextSteps,
                                boolean sharedWithEmployee) {

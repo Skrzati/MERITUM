@@ -23,6 +23,11 @@ public class EvaluationRuleEngine {
 
     /** Wylicza wynik i zbiera naruszenia blokad. Rzuca wyjątek tylko, gdy oceny nie da się policzyć. */
     public EvaluationResult assess(EvaluationInput in) {
+        return assess(in, SchemaRules.DEFAULT);
+    }
+
+    /** Progi poziomów z wersji schematu cyklu (nowelizacja) — domyślnie § 11 rozporządzenia z 2016 r. */
+    public EvaluationResult assess(EvaluationInput in, SchemaRules rules) {
         List<String> scoreViolations = new ArrayList<>(scaleViolations(in.scores()));
         Set<String> codes = in.criteria().stream().map(Criterion::code)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
@@ -39,7 +44,7 @@ public class EvaluationRuleEngine {
 
         int sum = codes.stream().mapToInt(in.scores()::get).sum();
         int count = codes.size();
-        PerformanceLevel level = PerformanceLevel.of(sum, count);
+        PerformanceLevel level = rules.level(sum, count);
         BigDecimal average = BigDecimal.valueOf(sum).divide(BigDecimal.valueOf(count), 10, RoundingMode.HALF_UP);
         String averageDisplay = average.setScale(1, RoundingMode.HALF_UP).toPlainString();
         List<Criterion> disqualifying = in.criteria().stream()

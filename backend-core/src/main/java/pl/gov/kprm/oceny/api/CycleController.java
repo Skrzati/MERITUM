@@ -267,6 +267,28 @@ public class CycleController {
                 .body(integrations.interviewIcs(id, user).getBytes(StandardCharsets.UTF_8));
     }
 
+    /** Paczka do EZD RP: arkusz PDF/A-2b + metadane-ezd.json w jednym pliku .zip. */
+    @GetMapping(value = "/{id}/ezd-zip", produces = "application/zip")
+    public ResponseEntity<byte[]> ezdZip(@PathVariable Long id, @CurrentUser User user) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("application/zip"))
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment().filename("ezd-paczka-cykl-" + id + ".zip").build().toString())
+                .body(integrations.ezdZip(id, user));
+    }
+
+    @GetMapping("/{id}/self-prep")
+    public SelfPrepDto selfPrep(@PathVariable Long id, @CurrentUser User user) {
+        return SelfPrepDto.of(development.selfPrep(id, user));
+    }
+
+    /** Edycja wyłącznie przez ocenianego tego cyklu. */
+    @PutMapping("/{id}/self-prep")
+    public SelfPrepDto saveSelfPrep(@PathVariable Long id, @CurrentUser User user, @Valid @RequestBody SelfPrepRequest req) {
+        return SelfPrepDto.of(development.saveSelfPrep(id, user, new DevelopmentService.SelfPrepInput(req.achievements(),
+                req.challenges(), req.developmentNeeds(), req.sharedWithEvaluator())));
+    }
+
     /** Metadane dokumentu do rejestracji w EZD RP (KRI). */
     @GetMapping("/{id}/ezd-package")
     public EzdPackage ezdPackage(@PathVariable Long id, @CurrentUser User user) {

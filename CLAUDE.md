@@ -47,7 +47,8 @@
 │                                        #   V6 delay_reason + signature_method + 2 cykle po terminie (ustalenia z mentorami),
 │                                        #   V7 anonimowa ankieta dobrostanu (bez user_id, data bez godziny) + spójne uzasadnienie cyklu #9,
 │                                        #   V8 users.active, evaluator_substitutions, prev_evaluation_*, mały urząd demo bez DG (Płock),
-│                                        #   V9 feedback_checkins, iprz_items + iprz_status/approved/ack (art. 108) + seed IPRZ
+│                                        #   V9 feedback_checkins, iprz_items + iprz_status/approved/ack (art. 108) + seed IPRZ,
+│                                        #   V10 employee_self_prep
 │   └── src/test/                        # JUnit 5: rules/, pdf/, export/, auth/ (JwtAttackTest, RateLimitFilterTest), service/
 │                                        #   + it/ApiIntegrationTest, it/ProcessCompletionIntegrationTest (Etap 7: przypisywanie,
 │                                        #   powiadomienia, mały urząd, zastępstwa, kadry, korekta), it/SecurityIntegrationTest (IDOR, eskalacja, izolacja urzędów,
@@ -127,6 +128,8 @@ Stronicowanie (opcjonalne, wstecznie zgodne): `GET /api/cycles`, `/api/hr/employ
 | GET/POST | `/api/cycles/{id}/checkins` | zapis: oceniający/zastępca; odczyt: oni + oceniany (tylko `sharedWithEmployee`) | bieżąca informacja zwrotna; resetuje `QUARTERLY_CHECKIN`; audyt `CHECKIN_ADDED` |
 | GET/POST/PATCH/DELETE | `/api/cycles/{id}/iprz-items[/{itemId}]` | odczyt: jak cykl; zapis: oceniający/zastępca/HR | pozycje IPRZ `{criterionCode, actionTitle, formType, targetDate, status}`; po zatwierdzeniu tylko `status` |
 | POST | `/api/cycles/{id}/iprz/approve`, `/iprz/ack` | DG (urząd) / oceniany | art. 108: zatwierdzenie (`IPRZ_APPROVED`) i zapoznanie (`IPRZ_ACKNOWLEDGED`) |
+| GET | `/api/cycles/{id}/ezd-zip` | jak `GET /api/cycles/{id}` | `application/zip`: `arkusz-oceny-{id}.pdf` (PDF/A-2b) + `metadane-ezd.json`; audyt `EZD_ZIP_EXPORTED` |
+| GET/PUT | `/api/cycles/{id}/self-prep` | PUT: tylko oceniany; GET: oceniany, oceniający/zastępca (treść tylko gdy `sharedWithEvaluator`), inni 403 | przygotowanie ocenianego `{achievements, challenges, developmentNeeds, sharedWithEvaluator}` |
 | GET | `/api/team/overview` | EVALUATOR, DG | „Mój zespół”: mapa kompetencji (ostatnie oceny cząstkowe) + średnie, mentoring (mentor 7–9 / mentee ≤ 5), sygnały (`HrFactsRules`) — zapytania zbiorcze |
 | POST | `/api/cycles/{id}/next` | HR / oceniający | tylko z `COMPLETED`: po NEGATIVE ponowna ocena (`startDate = acknowledgedAt`, +6 mies.), po POSITIVE zwykły cykl od daty oceny; zawsze najnowszy schemat |
 | POST | `/api/cycles/{id}/criteria` | oceniający | `{"additional":[{"code":"K07"}], "interviewDate"?}` — obowiązkowe wg arkusza + 0–3 z katalogu (status DRAFT_CRITERIA) |
@@ -215,6 +218,10 @@ Zakończenie (zapoznanie, fikcja zapoznania, zmiana oceny przez DG) zapisuje wpi
 - **Obligatoryjny stopień** (art. 89 ust. 2, `GradeRules`): urzędnik SC, po ostatnim stopniu dwie kolejne oceny pozytywne na
   poziomie „powyżej” / „znacznie powyżej oczekiwań”, stopień < 9 → `mandatoryGradeEligible`.
 - Istniejące cykle zachowują `schema_version_id` (§ 13).
+- **Prawo jako kod 2.0** (`SchemaRules`): opcjonalne `config.deadlines` (`initialInterviewDays`, `initialInterviewAfterNegativeDays`,
+  `appealDays`, `appealDecisionDays`, `reevaluationMonths`) i `config.levelThresholds` (5 rosnących górnych progów, ostatni 9);
+  brak/błąd przy odczycie → wartości z 2016 r.; nowa wersja z błędnymi wartościami → 422. Terminy i poziomy cyklu liczone
+  z jego wersji schematu (cache per wersja — wersje są niezmienne).
 - **Mały urząd bez DG** (`offices.has_dg_role = false`, `AppealAuthority`): sprzeciw rozpatruje kierownik urzędu (użytkownik z
   rolą DG); PDF (pouczenie art. 83 ust. 1), `CycleDto.appealAuthority`, etykieta roli, drabina eskalacji > 30 dni i komunikaty
   w UI używają nazwy organu dynamicznie.

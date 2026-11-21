@@ -56,6 +56,14 @@ public final class Dtos {
     public record BulkCreateDto(List<CycleDto> created, List<BulkSkip> skipped) {
     }
 
+    public record SelfPrepDto(Long cycleId, String achievements, String challenges, String developmentNeeds,
+                              boolean sharedWithEvaluator, OffsetDateTime updatedAt) {
+        public static SelfPrepDto of(EmployeeSelfPrep p) {
+            return new SelfPrepDto(p.getCycleId(), p.getAchievements(), p.getChallenges(), p.getDevelopmentNeeds(),
+                    p.isSharedWithEvaluator(), p.getUpdatedAt());
+        }
+    }
+
     public record CheckinDto(Long id, Long cycleId, Long authorId, LocalDate conductedOn, String topic, String summary,
                              String nextSteps, boolean sharedWithEmployee) {
         public static CheckinDto of(FeedbackCheckin c) {

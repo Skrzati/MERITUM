@@ -27,7 +27,6 @@ import static pl.gov.kprm.oceny.service.Access.*;
 @RequiredArgsConstructor
 public class CycleWorkflowService {
     static final int MAX_BULK_CYCLES = 500;
-    private static final int REEVALUATION_MONTHS = 6;
     private static final Set<CycleStatus> NOTES_VISIBLE_TO_EMPLOYEE =
             EnumSet.of(CycleStatus.AWAITING_ACK, CycleStatus.COMPLETED, CycleStatus.APPEALED);
 
@@ -45,6 +44,7 @@ public class CycleWorkflowService {
     private final AuditService audit;
     private final ObjectMapper json;
     private final Clock clock;
+    private final Map<Long, SchemaRules> schemaRules = new java.util.concurrent.ConcurrentHashMap<>();
 
     @Transactional(readOnly = true)
     public List<EvaluationCycle> visibleFor(User user, Optional<PageRequest> page) {
@@ -164,7 +164,7 @@ public class CycleWorkflowService {
         cycle.setStatus(CycleStatus.DRAFT_CRITERIA);
         cycle.setStartDate(start);
         cycle.setReevaluation(reevaluation);
-        cycle.setDueDate(reevaluation ? deadlines.reevaluationDue(start)
+        cycle.setDueDate(reevaluation ? deadlines.reevaluationDue(start, SchemaRules.from(schema.getConfigJson()))
                 : deadlines.periodicEvaluationDue(start, schema.getPeriodMonths(), periods));
         cycle.setPlace(place != null && !place.isBlank() ? place.trim() : officeCity(employee.getOfficeId()));
         EvaluationCycle saved = cycles.saveAndFlush(cycle);
@@ -225,10 +225,11 @@ public class CycleWorkflowService {
                 .orElseThrow(() -> conflict("Brak obowiązującej wersji schematu oceny"));
         List<AbsencePeriod> periods = absences.findByUserIdOrderByStartDateAsc(employeeId).stream()
                 .map(a -> new AbsencePeriod(a.getStartDate(), a.getEndDate())).toList();
-        LocalDate due = reevaluation ? deadlines.reevaluationDue(start)
+        SchemaRules rules = SchemaRules.from(schema.getConfigJson());
+        LocalDate due = reevaluation ? deadlines.reevaluationDue(start, rules)
                 : deadlines.periodicEvaluationDue(start, schema.getPeriodMonths(), periods);
-        return new DuePreview(start, due, deadlines.initialInterviewDeadline(start, reevaluation),
-                reevaluation ? REEVALUATION_MONTHS : schema.getPeriodMonths(), schema.getVersionCode(),
+        return new DuePreview(start, due, deadlines.initialInterviewDeadline(start, reevaluation, rules),
+                reevaluation ? rules.reevaluationMonths() : schema.getPeriodMonths(), schema.getVersionCode(),
                 defaultSheet(employee), employee.getSupervisorId(), officeCity(employee.getOfficeId()));
     }
 
@@ -499,7 +500,7 @@ public class CycleWorkflowService {
         EvaluationCycle cycle = asEmployee(id, user);
         LocalDate today = LocalDate.now(clock);
         cycle.setAcknowledgedAt(today);
-        cycle.setAppealDeadline(deadlines.appealDeadline(today));
+        cycle.setAppealDeadline(deadlines.appealDeadline(today, rulesOf(cycle)));
         cycle.setSignatureMethod(signatureMethod != null ? signatureMethod : SignatureMethod.SYSTEM_DEMO);
         transition(cycle, user, CycleStatus.COMPLETED, "EVALUATION_ACKNOWLEDGED",
                 Map.of("appealDeadline", cycle.getAppealDeadline(), "signatureMethod", cycle.getSignatureMethod()));
@@ -520,7 +521,7 @@ public class CycleWorkflowService {
         cycle.setRefusalReason(reason);
         cycle.setRefusalDate(date);
         cycle.setAcknowledgedAt(date);
-        cycle.setAppealDeadline(deadlines.appealDeadline(date));
+        cycle.setAppealDeadline(deadlines.appealDeadline(date, rulesOf(cycle)));
         transition(cycle, user, CycleStatus.COMPLETED, "ACKNOWLEDGEMENT_REFUSED",
                 Map.of("reason", reason, "date", date, "appealDeadline", cycle.getAppealDeadline()));
         history.recordCompleted(cycle);
@@ -535,7 +536,7 @@ public class CycleWorkflowService {
         }
         cycle.setAppealText(content);
         cycle.setAppealedAt(OffsetDateTime.now(clock));
-        cycle.setAppealDecisionDeadline(deadlines.appealDecisionDeadline(today));
+        cycle.setAppealDecisionDeadline(deadlines.appealDecisionDeadline(today, rulesOf(cycle)));
         transition(cycle, user, CycleStatus.APPEALED, "APPEAL_FILED",
                 Map.of("decisionDeadline", cycle.getAppealDecisionDeadline()));
         return cycle;
@@ -614,7 +615,13 @@ public class CycleWorkflowService {
     /** Termin na ustalenie kryteriów (§ 7): 30 dni od rozpoczęcia cyklu albo 7 dni po ocenie negatywnej. */
     @Transactional(readOnly = true)
     public LocalDate criteriaDeadline(EvaluationCycle cycle) {
-        return deadlines.initialInterviewDeadline(cycle.getStartDate(), cycle.isReevaluation());
+        return deadlines.initialInterviewDeadline(cycle.getStartDate(), cycle.isReevaluation(), rulesOf(cycle));
+    }
+
+    /** Terminy i progi z wersji schematu cyklu (§ 13: cykl zachowuje swoją wersję); wersje są niezmienne → cache. */
+    SchemaRules rulesOf(EvaluationCycle cycle) {
+        return schemaRules.computeIfAbsent(cycle.getSchemaVersionId(), id -> SchemaRules.from(
+                schemas.findById(id).map(SchemaVersion::getConfigJson).orElse(null)));
     }
 
     private EvaluationResult assessOrThrow(EvaluationCycle cycle, Map<String, Integer> scores, String justification,
@@ -622,7 +629,7 @@ public class CycleWorkflowService {
         User employee = users.findById(cycle.getEmployeeId())
                 .orElseThrow(() -> notFound("Użytkownik", cycle.getEmployeeId()));
         EvaluationResult result = engine.assess(new EvaluationInput(criteriaOf(cycle), scores, justification,
-                iprzNotes, grade, employee.isCivilServant(), employee.getCivilServiceGrade()));
+                iprzNotes, grade, employee.isCivilServant(), employee.getCivilServiceGrade()), rulesOf(cycle));
         if (!result.isValid()) {
             throw new RuleViolationException(result.violations(), result);
         }

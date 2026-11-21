@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pl.gov.kprm.oceny.domain.*;
+import pl.gov.kprm.oceny.export.EzdZip;
 import pl.gov.kprm.oceny.export.IcsCalendarRenderer;
 import pl.gov.kprm.oceny.export.IcsCalendarRenderer.Attendee;
 import pl.gov.kprm.oceny.export.IcsCalendarRenderer.Invitation;
@@ -37,6 +38,9 @@ public class IntegrationExportService {
     private final OfficeRepository offices;
     private final SchemaVersionRepository schemas;
     private final Clock clock;
+    private final PdfExportService pdfExport;
+    private final AuditService audit;
+    private final com.fasterxml.jackson.databind.ObjectMapper json;
 
     public record Party(Long id, String name, String role) {
     }
@@ -85,6 +89,23 @@ public class IntegrationExportService {
                 cycle.getStatus(), cycle.getEvaluatedOn(), cycle.getAcknowledgedAt(), cycle.getSignatureMethod(),
                 PDF_FORMAT, ACCESS_RESTRICTION, LEGAL_BASIS,
                 "/api/cycles/" + cycleId + "/pdf", schemaVersion, OffsetDateTime.now(clock));
+    }
+
+    /** Jednoklikowa paczka EZD RP: arkusz PDF/A + metadane (audyt EZD_ZIP_EXPORTED). */
+    @Transactional
+    public byte[] ezdZip(Long cycleId, User user) {
+        EzdPackage metadata = ezdPackage(cycleId, user);
+        byte[] pdf = pdfExport.export(cycleId, user);
+        byte[] zip;
+        try {
+            zip = EzdZip.build(cycleId, pdf, json.writerWithDefaultPrettyPrinter().writeValueAsBytes(metadata));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalStateException("Nie można zapisać metadanych EZD", e);
+        }
+        EvaluationCycle cycle = workflow.get(cycleId, user);
+        audit.log(user, cycle.getOfficeId(), "EZD_ZIP_EXPORTED", AuditService.CYCLE, cycleId,
+                java.util.Map.of("caseId", metadata.caseId(), "bytes", zip.length));
+        return zip;
     }
 
     private String location(EvaluationCycle cycle) {

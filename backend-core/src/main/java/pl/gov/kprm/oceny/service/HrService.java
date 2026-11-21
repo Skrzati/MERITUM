@@ -11,6 +11,7 @@ import pl.gov.kprm.oceny.rules.DeadlineService;
 import pl.gov.kprm.oceny.rules.EvaluationOutcome;
 import pl.gov.kprm.oceny.rules.PerformanceLevel;
 import pl.gov.kprm.oceny.rules.RuleViolationException;
+import pl.gov.kprm.oceny.rules.SchemaRules;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -355,12 +356,12 @@ public class HrService {
     }
 
     private LocalDate recalculateDue(EvaluationCycle cycle, List<AbsencePeriod> periods) {
+        SchemaVersion schema = schemas.findById(cycle.getSchemaVersionId())
+                .orElseThrow(() -> notFound("Schemat", cycle.getSchemaVersionId()));
         if (cycle.isReevaluation()) {
-            return deadlines.reevaluationDue(cycle.getStartDate());
+            return deadlines.reevaluationDue(cycle.getStartDate(), SchemaRules.from(schema.getConfigJson()));
         }
-        int months = schemas.findById(cycle.getSchemaVersionId())
-                .orElseThrow(() -> notFound("Schemat", cycle.getSchemaVersionId())).getPeriodMonths();
-        return deadlines.periodicEvaluationDue(cycle.getStartDate(), months, periods);
+        return deadlines.periodicEvaluationDue(cycle.getStartDate(), schema.getPeriodMonths(), periods);
     }
 
     private List<EvaluationCycle> activeCycles(Long employeeId) {

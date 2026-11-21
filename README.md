@@ -21,3 +21,16 @@ Logowanie demo: frontend loguje automatycznie (JWT z `POST /api/auth/gov-login`)
 `gov-login` jako `Authorization: Bearer <token>` albo nagłówek `X-Demo-User-Id: <id>` (wyłączany `DEMO_HEADER_ENABLED=false`).
 
 `make down` · `make reset` (kasuje dane) · `make logs` · `make ps`
+
+## Najważniejsze moduły
+
+- Pełny proces oceny (kryteria → rozmowy → notatki/check-iny → ocena → zapoznanie/fikcja → sprzeciw), PDF/A 1:1 ze wzorem,
+  paczka EZD RP (`/api/cycles/{id}/ezd-zip`: PDF + metadane KRI), zaproszenia `.ics`.
+- Kadry: przypisywanie cykli (pojedynczo z kreatorem A/B/C i grupowo), zastępstwa, edycja/anonimizacja, historia ocen,
+  zaległości z eskalacją, raport CSV, tryb korekty.
+- Wirtualny HR Partner: „Mój zespół” (`/team` — mapa kompetencji, mentoring, radar przeciążenia), bieżąca informacja
+  zwrotna (FUKO), strukturalny IPRZ z zatwierdzeniem (art. 108), przygotowanie ocenianego do rozmowy.
+- Prawo jako kod: wersje schematu z kryteriami, okresem, terminami (`deadlines`) i progami poziomów (`levelThresholds`)
+  edytowane w `/admin` — nowelizacja bez zmiany kodu; urzędy bez DG obsługiwane (kierownik urzędu).
+- Opcjonalny lokalny LLM: `docker compose -f infra/docker-compose.yml --profile local-llm up -d` (ollama, sieć wewnętrzna).
+
