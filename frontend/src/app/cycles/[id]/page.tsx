@@ -10,6 +10,7 @@ import { CriteriaTab } from "@/components/cycle/CriteriaTab";
 import { EvaluationTab } from "@/components/cycle/EvaluationTab";
 import { FormCorrectionPanel } from "@/components/cycle/FormCorrectionPanel";
 import { InterviewTab } from "@/components/cycle/InterviewTab";
+import { IprzPanel } from "@/components/cycle/IprzPanel";
 import { NotesTab } from "@/components/cycle/NotesTab";
 import { ProgressSteps } from "@/components/cycle/ProgressSteps";
 import { Badge, Card, ProblemAlert, Spinner } from "@/components/ui";
@@ -141,7 +142,12 @@ export default function CyclePage() {
         {tab === "criteria" && <CriteriaTab view={view} />}
         {tab === "interview" && <InterviewTab view={view} />}
         {tab === "notes" && <NotesTab view={view} />}
-        {tab === "evaluation" && <EvaluationTab view={view} onOpenInterview={() => setTab("interview")} />}
+        {tab === "evaluation" && (
+          <div className="space-y-6">
+            <EvaluationTab view={view} onOpenInterview={() => setTab("interview")} />
+            <IprzPanel view={view} />
+          </div>
+        )}
         {tab === "changes" && (
           <div className="space-y-6">
             <ChangesTab view={view} />

@@ -19,6 +19,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     boolean existsBySupervisorId(Long supervisorId);
 
+    List<User> findBySupervisorIdAndActiveTrueOrderByFullNameAsc(Long supervisorId);
+
     /** Czy rekord jest wskazywany przez dane procesu (wtedy anonimizacja zamiast usunięcia). */
     @Query(nativeQuery = true, value = """
             select exists(select 1 from evaluation_cycles where employee_id = :id or evaluator_id = :id)

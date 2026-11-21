@@ -12,6 +12,7 @@ import { useUser } from "./UserProvider";
 
 const NAV: { href: string; label: string; roles?: Role[] }[] = [
   { href: "/", label: "Pulpit" },
+  { href: "/team", label: "Mój zespół", roles: ["EVALUATOR", "DG"] },
   { href: "/hr", label: "Panel Kadr", roles: ["HR"] },
   { href: "/stats", label: "Statystyki", roles: ["DG", "HR"] },
   { href: "/audit", label: "Audyt", roles: ["HR", "DG", "KPRM_ADMIN"] },

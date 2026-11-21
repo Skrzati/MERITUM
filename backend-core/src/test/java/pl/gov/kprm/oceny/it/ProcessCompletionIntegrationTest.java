@@ -65,6 +65,59 @@ class ProcessCompletionIntegrationTest {
         assertThat(reminder).as("ostatnia notatka 15.07.2025").isNotNull();
         assertThat(reminder.path("severity").asText()).isEqualTo("HIGH");
         assertThat(notification(SMALL_HEAD, "QUARTERLY_CHECKIN", SMALL_CYCLE)).as("tylko dla oceniającego").isNull();
+
+        send(post("/api/cycles/" + SMALL_CYCLE + "/checkins"), SMALL_EVALUATOR,
+                "{\"topic\": \"Bieżąca informacja zwrotna\", \"summary\": \"Omówiono kontrole w terenie\"}", 201);
+        assertThat(notification(SMALL_EVALUATOR, "QUARTERLY_CHECKIN", SMALL_CYCLE)).as("check-in resetuje licznik").isNull();
+    }
+
+    @Test
+    void checkinsAreVisibleToEmployeeOnlyWhenShared() throws Exception {
+        send(post("/api/cycles/1/checkins"), EVALUATOR, "{\"topic\": \"Prywatna\", \"summary\": \"Robocze\"}", 201);
+        send(post("/api/cycles/1/checkins"), EVALUATOR,
+                "{\"topic\": \"Udostępniona\", \"summary\": \"Docenienie\", \"sharedWithEmployee\": true}", 201);
+        JsonNode forEmployee = fetch("/api/cycles/1/checkins", EMPLOYEE);
+        assertThat(forEmployee.size()).isEqualTo(1);
+        assertThat(forEmployee.get(0).path("topic").asText()).isEqualTo("Udostępniona");
+        assertThat(fetch("/api/cycles/1/checkins", EVALUATOR).size()).isEqualTo(2);
+        expect(as(get("/api/cycles/1/checkins"), HR), 403);
+        send(post("/api/cycles/1/checkins"), EMPLOYEE, "{\"topic\": \"x\", \"summary\": \"y\"}", 403);
+    }
+
+    @Test
+    void iprzIsProposedApprovedByDgAndAcknowledgedByEmployee() throws Exception {
+        assertThat(fetch("/api/cycles/9", 13).path("iprzStatus").asText()).isEqualTo("PROPOSED");
+        assertThat(fetch("/api/cycles/9/iprz-items", 13).size()).isEqualTo(3);
+        send(post("/api/cycles/9/iprz-items"), EVALUATOR,
+                "{\"criterionCode\": \"K10\", \"actionTitle\": \"Mentoring z radcą prawnym\", \"formType\": \"MENTORING\"}", 201);
+        send(post("/api/cycles/9/iprz-items"), 13L, "{\"actionTitle\": \"x\", \"formType\": \"INNE\"}", 403);
+        send(post("/api/cycles/9/iprz-items"), EVALUATOR, "{\"actionTitle\": \"bez formy\"}", 422);
+        send(post("/api/cycles/9/iprz/ack"), 13L, "{}", 409);
+        send(post("/api/cycles/9/iprz/approve"), HR, "{}", 403);
+
+        assertThat(send(post("/api/cycles/9/iprz/approve"), DG, "{}", 200).path("iprzStatus").asText()).isEqualTo("APPROVED");
+        send(post("/api/cycles/9/iprz-items"), EVALUATOR, "{\"actionTitle\": \"po zatwierdzeniu\", \"formType\": \"INNE\"}", 409);
+        long first = fetch("/api/cycles/9/iprz-items", EVALUATOR).get(0).path("id").asLong();
+        assertThat(send(patch("/api/cycles/9/iprz-items/" + first), EVALUATOR, "{\"status\": \"DONE\"}", 200)
+                .path("status").asText()).isEqualTo("DONE");
+        assertThat(send(post("/api/cycles/9/iprz/ack"), 13L, "{}", 200).path("iprzEmployeeAckAt").isNull()).isFalse();
+    }
+
+    @Test
+    void teamOverviewCombinesCompetenciesMentoringAndSignals() throws Exception {
+        JsonNode team = fetch("/api/team/overview", EVALUATOR);
+        assertThat(team.path("competencies").size()).isGreaterThanOrEqualTo(4);
+        assertThat(team.path("teamAverages").size()).isPositive();
+        for (JsonNode p : team.path("mentoring")) {
+            assertThat(p.path("mentorScore").asInt()).isGreaterThanOrEqualTo(7);
+            assertThat(p.path("menteeScore").asInt()).isLessThanOrEqualTo(5);
+            assertThat(p.path("mentorId").asLong()).isNotEqualTo(p.path("menteeId").asLong());
+        }
+        JsonNode lewicki = find(team.path("signals"), "employeeId", 8);
+        assertThat(lewicki.path("activeCycleId").asLong()).isEqualTo(16);
+        assertThat(lewicki.has("absenceDays6m") && lewicki.has("overloadNotesCount")).isTrue();
+        expect(as(get("/api/team/overview"), EMPLOYEE), 403);
+        expect(as(get("/api/team/overview"), HR), 403);
     }
 
     @Test

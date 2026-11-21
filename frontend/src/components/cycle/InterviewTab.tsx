@@ -1,16 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { AiDisclaimer, Alert, Button, Card, MaskedPrompt, ModeBadge, ProblemAlert } from "@/components/ui";
+import { AiDisclaimer, Alert, Button, Card, Field, inputClass, MaskedPrompt, ModeBadge, ProblemAlert } from "@/components/ui";
 import { useUser } from "@/components/UserProvider";
 import { api, coreAi, download } from "@/lib/api";
 import { formatDate } from "@/lib/labels";
-import type { InterviewPrepResponse, InterviewStage } from "@/lib/types";
+import type { FeedbackCheckin, InterviewPrepResponse, InterviewStage } from "@/lib/types";
+import { useAsync } from "@/lib/useAsync";
 import type { CycleView } from "./context";
 
 const STAGES: { id: InterviewStage; label: string }[] = [
   { id: "INITIAL", label: "Rozmowa rozpoczynająca (§ 5 ust. 1)" },
   { id: "EVALUATION", label: "Rozmowa oceniająca (§ 10)" },
+  { id: "FEEDBACK", label: "Bieżąca informacja zwrotna (FUKO)" },
 ];
 const COPY_FEEDBACK_MS = 2500;
 
@@ -141,6 +143,8 @@ export function InterviewTab({ view }: { view: CycleView }) {
       </div>
 
       <div className="space-y-6 xl:col-span-2">
+        <CheckinsCard view={view} />
+
         <Card title="Zaproszenie do kalendarza">
           <p className="text-sm text-slate-700">
             Plik .ics na rozmowę <strong>{icsStage}</strong> — termin: {formatDate(interviewDate)}
@@ -197,5 +201,80 @@ export function DevelopmentCatalog({
         </li>
       ))}
     </ul>
+  );
+}
+
+/** Check-iny (bieżąca informacja zwrotna, Standardy ZZL): zapis — oceniający/zastępca; oceniany widzi udostępnione. */
+function CheckinsCard({ view }: { view: CycleView }) {
+  const { cycle, isEvaluator, isEmployee } = view;
+  const list = useAsync(
+    () => (isEvaluator || isEmployee ? api<FeedbackCheckin[]>(`/api/cycles/${cycle.id}/checkins`) : Promise.resolve([])),
+    [cycle.id],
+  );
+  const [topic, setTopic] = useState("");
+  const [summary, setSummary] = useState("");
+  const [nextSteps, setNextSteps] = useState("");
+  const [shared, setShared] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const active = !["COMPLETED", "APPEALED"].includes(cycle.status);
+
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api(`/api/cycles/${cycle.id}/checkins`, { body: { topic, summary, nextSteps: nextSteps || null, sharedWithEmployee: shared } });
+      setTopic("");
+      setSummary("");
+      setNextSteps("");
+      await list.reload();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!isEvaluator && !isEmployee) return null;
+  return (
+    <Card title="Bieżąca informacja zwrotna (check-iny)">
+      {list.data && list.data.length > 0 ? (
+        <ul className="mb-3 space-y-2 text-sm">
+          {list.data.map((c) => (
+            <li key={c.id} className="rounded border border-slate-200 p-2">
+              <p className="font-semibold">
+                {formatDate(c.conductedOn)} · {c.topic} {!c.sharedWithEmployee && <span className="text-xs text-slate-600">(robocze)</span>}
+              </p>
+              <p>{c.summary}</p>
+              {c.nextSteps && <p className="text-xs text-slate-700">Kolejny krok: {c.nextSteps}</p>}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mb-3 text-sm text-slate-700">Brak zapisanych rozmów.</p>
+      )}
+      {isEvaluator && active && (
+        <div className="space-y-2">
+          <Field label="Temat">
+            <input className={inputClass} value={topic} onChange={(e) => setTopic(e.target.value)} />
+          </Field>
+          <Field label="Podsumowanie (fakty, docenienie, ustalenia)">
+            <textarea className={inputClass} rows={2} value={summary} onChange={(e) => setSummary(e.target.value)} />
+          </Field>
+          <Field label="Kolejny krok">
+            <input className={inputClass} value={nextSteps} onChange={(e) => setNextSteps(e.target.value)} />
+          </Field>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" className="h-4 w-4 accent-navy-700" checked={shared} onChange={(e) => setShared(e.target.checked)} />
+            Udostępnij ocenianemu
+          </label>
+          <Button onClick={save} busy={busy} disabled={!topic.trim() || !summary.trim()}>
+            Zapisz check-in
+          </Button>
+          <p className="text-xs text-slate-600">Odbyty check-in resetuje kwartalne przypomnienie (90 dni).</p>
+        </div>
+      )}
+      <ProblemAlert error={error} />
+    </Card>
   );
 }

@@ -93,3 +93,16 @@ def test_live_mode_falls_back_when_endpoint_unreachable(monkeypatch):
     monkeypatch.setattr(main, "llm", LLMClient(base_url="http://127.0.0.1:9", api_key="", live=True, timeout=0.5))
     data = TestClient(main.app).post("/api/ai/hr-partner", json={"notes": ["Nadgodziny"], "workload_signals": {}}).json()
     assert data["mode"] == "MOCK_FALLBACK"
+
+
+def test_interview_prep_feedback_stage_uses_fuko_and_praise_from_notes(client):
+    body = {"employee_name": "Anna Nowak", "sheet_type": "C", "stage": "FEEDBACK",
+            "notes": ["Anna Nowak terminowo wdrożyła nowy obieg dokumentów.", "Anna Nowak spóźniła się z raportem kwartalnym."]}
+    data = client.post("/api/ai/interview-prep", json=body).json()
+
+    topics = [a["topic"] for a in data["agenda"]]
+    assert data["stage"] == "FEEDBACK" and topics[0] == "Docenienie"
+    assert [t[0] for t in topics[1:]] == ["F", "U", "K", "O"]
+    assert "wdrożyła" in data["agenda"][0]["questions"][0] and "Anna Nowak" in data["agenda"][0]["questions"][0]
+    assert "Nowak" not in data["masked_prompt"] and "bieżąca informacja zwrotna" in data["masked_prompt"]
+    assert not any("pkt" in q for a in data["agenda"] for q in a["questions"])

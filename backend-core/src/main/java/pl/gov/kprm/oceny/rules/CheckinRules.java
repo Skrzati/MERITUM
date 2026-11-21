@@ -18,9 +18,9 @@ public final class CheckinRules {
     private CheckinRules() {
     }
 
-    /** Ostatnia aktywność: najpóźniejsza z dat rozpoczęcia cyklu, potwierdzenia kryteriów i ostatniej notatki. */
-    public static LocalDate lastActivity(LocalDate startDate, LocalDate criteriaConfirmedOn, LocalDate lastNoteOn) {
-        return Stream.of(startDate, criteriaConfirmedOn, lastNoteOn).filter(Objects::nonNull)
+    /** Ostatnia aktywność: najpóźniejsza z dat (rozpoczęcie, potwierdzenie kryteriów, notatka, check-in). */
+    public static LocalDate lastActivity(LocalDate startDate, LocalDate... others) {
+        return Stream.concat(Stream.of(startDate), Stream.of(others)).filter(Objects::nonNull)
                 .max(LocalDate::compareTo).orElseThrow();
     }
 

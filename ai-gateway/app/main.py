@@ -114,7 +114,7 @@ class HrPartnerResponse(BaseModel):
 class InterviewPrepRequest(BaseModel):
     employee_name: str
     sheet_type: Literal["A", "B", "C"]
-    stage: Literal["INITIAL", "EVALUATION"]
+    stage: Literal["INITIAL", "EVALUATION", "FEEDBACK"]
     criteria_scores: List[CriterionScoreIn] = Field(default_factory=list)
     notes: List[str] = Field(default_factory=list)
 

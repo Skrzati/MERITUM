@@ -46,7 +46,8 @@
 │                                        #   V5 pola wzoru KPRM + historia/dobrostan/zakres/terminy + opisy kryteriów + seed demo,
 │                                        #   V6 delay_reason + signature_method + 2 cykle po terminie (ustalenia z mentorami),
 │                                        #   V7 anonimowa ankieta dobrostanu (bez user_id, data bez godziny) + spójne uzasadnienie cyklu #9,
-│                                        #   V8 users.active, evaluator_substitutions, prev_evaluation_*, mały urząd demo bez DG (Płock)
+│                                        #   V8 users.active, evaluator_substitutions, prev_evaluation_*, mały urząd demo bez DG (Płock),
+│                                        #   V9 feedback_checkins, iprz_items + iprz_status/approved/ack (art. 108) + seed IPRZ
 │   └── src/test/                        # JUnit 5: rules/, pdf/, export/, auth/ (JwtAttackTest, RateLimitFilterTest), service/
 │                                        #   + it/ApiIntegrationTest, it/ProcessCompletionIntegrationTest (Etap 7: przypisywanie,
 │                                        #   powiadomienia, mały urząd, zastępstwa, kadry, korekta), it/SecurityIntegrationTest (IDOR, eskalacja, izolacja urzędów,
@@ -92,9 +93,10 @@
 |---|---|---|---|
 | oceny-postgres | postgres:16-alpine | 127.0.0.1:5432 (tylko lokalnie) | — |
 | oceny-gotenberg | gotenberg/gotenberg:8 | — (tylko sieć Dockera) | — |
-| oceny-backend-core | build `backend-core/` | 8080 | postgres (healthy), gotenberg (healthy); woła ai-gateway przez `/api/core-ai` |
+| oceny-backend-core | build `backend-core/` | 127.0.0.1:8080 | postgres (healthy), gotenberg (healthy); woła ai-gateway przez `/api/core-ai` |
 | oceny-ai-gateway | build `ai-gateway/` | — (tylko sieć Dockera; AI wyłącznie przez `/api/core-ai/*`) | — (env `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_LIVE`, `LLM_MODEL`) |
 | oceny-frontend | build `frontend/` | 3000 | backend-core (healthy) |
+| oceny-ollama (profil `local-llm`) | ollama/ollama | — (sieć Dockera, 11434) | — opcjonalny lokalny LLM |
 
 W sieci Dockera serwisy adresują się po nazwach (`postgres:5432`, `gotenberg:3000`).
 
@@ -122,6 +124,10 @@ Stronicowanie (opcjonalne, wstecznie zgodne): `GET /api/cycles`, `/api/hr/employ
 | PATCH | `/api/cycles/{id}/details` | oceniający / zastępca / HR, cykl aktywny | `{place?, startDate?, dueDate?, reason?}` — zmiana okresu po potwierdzeniu kryteriów wymaga `reason` (422); audyt `CYCLE_DETAILS_UPDATED` |
 | POST | `/api/cycles/{id}/admin-correction` | HR / DG (urząd), KPRM_ADMIN | tryb korekty: `{reason (wymagane), targetStatus?, criteriaInterviewDate?, criteriaConfirmedOn?, evaluationInterviewDate?, evaluatedOn?, acknowledgedAt?, place?, startDate?, dueDate?}`; audyt `ADMIN_CORRECTION` (from/to + zmiany pól) |
 | GET | `/api/cycles/{id}/history` | jak `GET /api/cycles/{id}` | historia ocen ocenianego (`SYSTEM` / `HISTORICAL`) |
+| GET/POST | `/api/cycles/{id}/checkins` | zapis: oceniający/zastępca; odczyt: oni + oceniany (tylko `sharedWithEmployee`) | bieżąca informacja zwrotna; resetuje `QUARTERLY_CHECKIN`; audyt `CHECKIN_ADDED` |
+| GET/POST/PATCH/DELETE | `/api/cycles/{id}/iprz-items[/{itemId}]` | odczyt: jak cykl; zapis: oceniający/zastępca/HR | pozycje IPRZ `{criterionCode, actionTitle, formType, targetDate, status}`; po zatwierdzeniu tylko `status` |
+| POST | `/api/cycles/{id}/iprz/approve`, `/iprz/ack` | DG (urząd) / oceniany | art. 108: zatwierdzenie (`IPRZ_APPROVED`) i zapoznanie (`IPRZ_ACKNOWLEDGED`) |
+| GET | `/api/team/overview` | EVALUATOR, DG | „Mój zespół”: mapa kompetencji (ostatnie oceny cząstkowe) + średnie, mentoring (mentor 7–9 / mentee ≤ 5), sygnały (`HrFactsRules`) — zapytania zbiorcze |
 | POST | `/api/cycles/{id}/next` | HR / oceniający | tylko z `COMPLETED`: po NEGATIVE ponowna ocena (`startDate = acknowledgedAt`, +6 mies.), po POSITIVE zwykły cykl od daty oceny; zawsze najnowszy schemat |
 | POST | `/api/cycles/{id}/criteria` | oceniający | `{"additional":[{"code":"K07"}], "interviewDate"?}` — obowiązkowe wg arkusza + 0–3 z katalogu (status DRAFT_CRITERIA) |
 | POST | `/api/cycles/{id}/confirm-criteria` | oceniany | → OBSERVATION (kryteria zablokowane) |
@@ -166,7 +172,7 @@ Stronicowanie (opcjonalne, wstecznie zgodne): `GET /api/cycles`, `/api/hr/employ
 | POST | `/api/ai/socratic-draft` | `masked_prompt`, `socratic_questions`, `draft_justification`, `ai_disclaimer` — nigdy nie proponuje punktów |
 | POST | `/api/ai/consistency-check` | `warnings[{code, severity, message}]`, `auto_modified: false` |
 | POST | `/api/ai/hr-partner` | `masked_prompt`, `burnout_risk_signal`, `conversation_starters`, `organizational_suggestions`, `appreciation_moment` |
-| POST | `/api/ai/interview-prep` | `{stage: INITIAL\|EVALUATION}` → `goal`, `agenda[{topic, legal_basis, questions}]` (§ 5 ust. 1: 4 zagadnienia / § 10: 3), `difficult_situations`, `development_catalog` (IPRZ) |
+| POST | `/api/ai/interview-prep` | `{stage: INITIAL\|EVALUATION\|FEEDBACK}` (FEEDBACK — FUKO + docenienie z notatek) → `goal`, `agenda[{topic, legal_basis, questions}]` (§ 5 ust. 1: 4 zagadnienia / § 10: 3), `difficult_situations`, `development_catalog` (IPRZ) |
 | POST | `/api/ai/suggest-criteria` | `{position_title, department, sheet_type, mandatory_codes, responsibilities_summary}` → `masked_prompt`, `suggestions[{code, name, reason, expectations}]` (max 3, wyłącznie z katalogu, spoza obowiązkowych — filtr także na odpowiedzi LLM), `ai_disclaimer`, `mode` |
 
 Kody `consistency-check`: `CRITERIA_MISMATCH`, `FOREIGN_NAME`, `LEVEL_MISMATCH`, `AVERAGE_MISMATCH`, `DUPLICATE_TEXT`, `GENDER_MISMATCH`.
@@ -214,7 +220,10 @@ Zakończenie (zapoznanie, fikcja zapoznania, zmiana oceny przez DG) zapisuje wpi
   w UI używają nazwy organu dynamicznie.
 - **Zastępstwa**: aktywny zastępca (dziś ∈ [start, end]) widzi aktywne cykle zastępowanego, działa jak oceniający
   (`canActAsEvaluator`), dostaje powiadomienia; jego wpisy audytu mają `substituteFor`.
-- **Przypomnienia kwartalne** (`CheckinRules`): ostatnia aktywność = max(start, potwierdzenie kryteriów, ostatnia notatka).
+- **Przypomnienia kwartalne** (`CheckinRules`): ostatnia aktywność = max(start, potwierdzenie kryteriów, ostatnia notatka,
+  ostatni check-in).
+- **Urząd bez DG**: pouczenie w PDF dopisuje podstawę „art. 25 ust. 9 ustawy o służbie cywilnej” (`AppealAuthority.legalBasis`).
+- **IPRZ** (art. 108): DRAFT → PROPOSED (pierwsza pozycja) → APPROVED (DG / kierownik urzędu); pozycje drukowane w PDF.
 - **Nieobecność a zmiana terminu**: przeliczenie z nieobecności nie cofa terminu wcześniej niż zastosowany (APPLIED) wniosek
   z art. 81 ust. 8 — zachowywana późniejsza data, audyt `keptRescheduledDueDate`.
 - **Poprzednia ocena na arkuszu**: z historii (`SYSTEM`/`HISTORICAL`), a gdy brak — wpisana ręcznie w ocenie

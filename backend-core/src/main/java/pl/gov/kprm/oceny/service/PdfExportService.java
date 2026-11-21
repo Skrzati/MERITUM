@@ -10,6 +10,7 @@ import pl.gov.kprm.oceny.domain.User;
 import pl.gov.kprm.oceny.pdf.GotenbergClient;
 import pl.gov.kprm.oceny.pdf.SheetData;
 import pl.gov.kprm.oceny.pdf.SheetHtmlRenderer;
+import pl.gov.kprm.oceny.repository.IprzItemRepository;
 import pl.gov.kprm.oceny.repository.OfficeRepository;
 import pl.gov.kprm.oceny.repository.UserRepository;
 import pl.gov.kprm.oceny.rules.Criterion;
@@ -31,6 +32,7 @@ public class PdfExportService {
     private final GotenbergClient gotenberg;
     private final AuditService audit;
     private final ObjectMapper json;
+    private final IprzItemRepository iprzItems;
 
     @Transactional
     public byte[] export(Long cycleId, User user) {
@@ -54,7 +56,7 @@ public class PdfExportService {
         return new SheetData(
                 offices.findById(c.getOfficeId()).orElseThrow(() -> notFound("Urząd", c.getOfficeId())),
                 user(c.getEmployeeId()), user(c.getEvaluatorId()), c, criteria, scores, grade,
-                history.previousEvaluation(c).orElse(null));
+                history.previousEvaluation(c).orElse(null), iprzItems.findByCycleIdOrderByIdAsc(c.getId()));
     }
 
     private User user(Long id) {

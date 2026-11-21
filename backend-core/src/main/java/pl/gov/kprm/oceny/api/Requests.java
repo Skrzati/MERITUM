@@ -8,6 +8,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import pl.gov.kprm.oceny.domain.CycleStatus;
 import pl.gov.kprm.oceny.domain.DgDecision;
+import pl.gov.kprm.oceny.domain.IprzItem;
 import pl.gov.kprm.oceny.domain.RescheduleMode;
 import pl.gov.kprm.oceny.domain.Role;
 import pl.gov.kprm.oceny.domain.SheetType;
@@ -54,6 +55,25 @@ public final class Requests {
 
     public record HistoryRequest(@NotNull EvaluationOutcome outcome, @NotNull PerformanceLevel level,
                                  @NotNull LocalDate evaluatedOn) {
+    }
+
+    public record CheckinRequest(LocalDate conductedOn, @NotBlank @Size(max = 255) String topic,
+                                 @NotBlank @Size(max = 5000) String summary, @Size(max = 2000) String nextSteps,
+                                 boolean sharedWithEmployee) {
+    }
+
+    /** POST: actionTitle i formType wymagane (walidacja w kontrolerze); PATCH: dowolny podzbiór pól. */
+    public record IprzItemRequest(@Size(max = 16) String criterionCode, @Size(max = 500) String actionTitle,
+                                  IprzItem.FormType formType, LocalDate targetDate, IprzItem.Status status) {
+        public IprzItem toItem() {
+            IprzItem i = new IprzItem();
+            i.setCriterionCode(criterionCode);
+            i.setActionTitle(actionTitle);
+            i.setFormType(formType);
+            i.setTargetDate(targetDate);
+            i.setStatus(status);
+            return i;
+        }
     }
 
     public record SubstitutionRequest(@NotNull Long evaluatorId, @NotNull Long deputyId, @NotNull LocalDate startDate,

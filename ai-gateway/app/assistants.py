@@ -170,7 +170,9 @@ def _mock_hr(notes: List[str], signals: Dict[str, float], burnout: bool):
 
 # ---------------------------------------------------------------- przygotowanie do rozmów (§ 5 ust. 1, § 10)
 
-STAGE_INITIAL, STAGE_EVALUATION = "INITIAL", "EVALUATION"
+STAGE_INITIAL, STAGE_EVALUATION, STAGE_FEEDBACK = "INITIAL", "EVALUATION", "FEEDBACK"
+STAGE_KIND = {STAGE_INITIAL: "rozpoczynająca (§ 5 ust. 1)", STAGE_EVALUATION: "oceniająca (§ 10)",
+              STAGE_FEEDBACK: "bieżąca informacja zwrotna (Standardy ZZL, struktura FUKO)"}
 MAX_DEVELOPMENT_CRITERIA = 4
 
 INTERVIEW_SYSTEM = (
@@ -187,7 +189,7 @@ def interview_prep(llm: LLMClient, employee_name: str, sheet_type: str, stage: s
     masker = PiiMasker(known_names=[employee_name])
     person = masker.mask(employee_name)
     masked_notes = [masker.mask(n) for n in notes]
-    kind = "rozpoczynająca (§ 5 ust. 1)" if stage == STAGE_INITIAL else "oceniająca (§ 10)"
+    kind = STAGE_KIND[stage]
     criteria_lines = "\n".join(f"- {c.name}" + (f": {c.score}" if c.score is not None else "") for c in criteria)
     notes_lines = "\n".join(f"- {n}" for n in masked_notes) or "- (brak notatek)"
     prompt = (f"Rozmowa: {kind}\nOceniany: {person}\nArkusz: {sheet_type}\nKryteria:\n{criteria_lines or '- (brak)'}\n"
@@ -221,9 +223,33 @@ def interview_prep(llm: LLMClient, employee_name: str, sheet_type: str, stage: s
     }
 
 
+def _mock_feedback(notes: List[str]):
+    """Krótka rozmowa informacyjna (FUKO: Fakty, Ustosunkowanie, Konsekwencje, Oczekiwania) + docenienie z notatek."""
+    praise = next((_snippet(n) for n in reversed(notes) if APPRECIATION_RE.search(n)), None)
+    fact = _snippet(notes[-1]) if notes else None
+    goal = "Krótka bieżąca informacja zwrotna: docenienie, omówienie jednej sytuacji na faktach i uzgodnienie kolejnego kroku."
+    agenda = [
+        {"topic": "Docenienie", "legal_basis": "Standardy ZZL — kultura doceniania",
+         "questions": [f"Chcę docenić: „{praise}”. Co pomogło Ci osiągnąć ten efekt?" if praise
+                       else "Co w ostatnich tygodniach udało Ci się najbardziej?"]},
+        {"topic": "F — Fakty", "legal_basis": "FUKO",
+         "questions": [f"Opisuję sytuację: „{fact}”. Jak ją widzisz?" if fact
+                       else "Opisz konkretną sytuację z ostatnich tygodni (co, kiedy, z jakim skutkiem)."]},
+        {"topic": "U — Ustosunkowanie", "legal_basis": "FUKO",
+         "questions": ["Jak ta sytuacja wpłynęła na Ciebie i na zespół?"]},
+        {"topic": "K — Konsekwencje", "legal_basis": "FUKO",
+         "questions": ["Jakie skutki dla realizacji zadań i współpracy widzisz, jeśli sytuacja się powtórzy lub utrwali?"]},
+        {"topic": "O — Oczekiwania i kolejny krok", "legal_basis": "FUKO",
+         "questions": ["Co konkretnie zrobimy do następnej rozmowy i jakiego wsparcia potrzebujesz?"]},
+    ]
+    return goal, agenda
+
+
 def _mock_interview(stage: str, criteria: List[CriterionScore], notes: List[str]):
     names = [c.name for c in criteria]
-    if stage == STAGE_INITIAL:
+    if stage == STAGE_FEEDBACK:
+        goal, agenda = _mock_feedback(notes)
+    elif stage == STAGE_INITIAL:
         goal = "Wspólne ustalenie obowiązków, kryteriów i oczekiwań na cały okres oceny oraz celów do osiągnięcia."
         agenda = [
             {"topic": "Główne obowiązki wynikające z opisu stanowiska pracy", "legal_basis": "§ 5 ust. 1 pkt 1",

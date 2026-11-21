@@ -4,6 +4,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.util.HtmlUtils;
 import pl.gov.kprm.oceny.domain.EvaluationCycle;
 import pl.gov.kprm.oceny.domain.EvaluationHistory;
+import pl.gov.kprm.oceny.domain.IprzItem;
 import pl.gov.kprm.oceny.domain.SignatureMethod;
 import pl.gov.kprm.oceny.domain.User;
 import pl.gov.kprm.oceny.rules.AppealAuthority;
@@ -138,6 +139,16 @@ public class SheetHtmlRenderer {
                 .append("</td></tr></table>")
                 .append(box("Uzasadnienie przyznanej oceny okresowej", c.getJustification()))
                 .append(box("Wnioski dotyczące indywidualnego programu rozwoju zawodowego", c.getIprzNotes()));
+        if (!d.iprzItems().isEmpty()) {
+            h.append("<table><tr><th>Działanie rozwojowe (IPRZ)</th><th>Kryterium</th><th>Forma</th><th>Termin</th></tr>");
+            for (IprzItem i : d.iprzItems()) {
+                h.append("<tr><td>").append(esc(i.getActionTitle())).append("</td><td>")
+                        .append(i.getCriterionCode() == null ? EMPTY : esc(i.getCriterionCode())).append("</td><td>")
+                        .append(i.getFormType().name().toLowerCase()).append("</td><td>").append(date(i.getTargetDate()))
+                        .append("</td></tr>");
+            }
+            h.append("</table>");
+        }
 
         boolean civilServant = d.employee().isCivilServant();
         EvaluationHistory prev = d.previousEvaluation();
@@ -181,7 +192,8 @@ public class SheetHtmlRenderer {
         }
         h.append("<div class=\"note\"><b>Pouczenie</b><br>Na podstawie art. 83 ust. 1 ").append(ACT)
                 .append(" od oceny okresowej służy, w terminie 7 dni od dnia zapoznania się z oceną, sprzeciw do ")
-                .append(AppealAuthority.of(d.office().isHasDgRole()).genitive()).append('.');
+                .append(AppealAuthority.of(d.office().isHasDgRole()).genitive())
+                .append(AppealAuthority.of(d.office().isHasDgRole()).legalBasis()).append('.');
         if (c.getAppealDeadline() != null) {
             h.append("<br>Termin na wniesienie sprzeciwu upływa: ").append(date(c.getAppealDeadline())).append('.');
         }

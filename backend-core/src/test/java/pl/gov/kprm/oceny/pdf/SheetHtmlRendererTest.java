@@ -47,8 +47,22 @@ class SheetHtmlRendererTest {
 
         SheetData smallOffice = data(true, null);
         smallOffice.office().setHasDgRole(false);
-        assertThat(renderer.render(smallOffice)).contains("sprzeciw do kierownika urzędu.")
-                .doesNotContain("dyrektora generalnego");
+        assertThat(renderer.render(smallOffice)).contains("sprzeciw do kierownika urzędu", "art. 25 ust. 9")
+                .doesNotContain("sprzeciw do dyrektora generalnego");
+    }
+
+    @Test
+    void structuredIprzItemsArePrintedInDevelopmentSection() {
+        pl.gov.kprm.oceny.domain.IprzItem item = new pl.gov.kprm.oceny.domain.IprzItem();
+        item.setActionTitle("Szkolenie z kontroli jakości <dokumentów>");
+        item.setCriterionCode("K08");
+        item.setFormType(pl.gov.kprm.oceny.domain.IprzItem.FormType.SZKOLENIE);
+        item.setTargetDate(LocalDate.of(2027, 3, 31));
+        SheetData d = data(true, null);
+        SheetData withItems = new SheetData(d.office(), d.employee(), d.evaluator(), d.cycle(), d.criteria(), d.scores(),
+                d.gradeRequest(), d.previousEvaluation(), List.of(item));
+        assertThat(renderer.render(withItems)).contains("Działanie rozwojowe (IPRZ)", "&lt;dokumentów&gt;", "szkolenie",
+                "31.03.2027");
     }
 
     @Test
@@ -97,7 +111,7 @@ class SheetHtmlRendererTest {
     @Test
     void averageIsEmptyUntilAllCriteriaScored() {
         SheetData partial = new SheetData(office(), employee(true), evaluator(), cycle(), CRITERIA,
-                Map.of("K08", 5), null, null);
+                Map.of("K08", 5), null, null, List.of());
         assertThat(SheetHtmlRenderer.averageDisplay(partial)).isEmpty();
     }
 
@@ -106,7 +120,7 @@ class SheetHtmlRendererTest {
         previous.setOutcome(EvaluationOutcome.POSITIVE);
         previous.setLevel(PerformanceLevel.ABOVE);
         previous.setEvaluatedOn(LocalDate.of(2024, 12, 15));
-        return new SheetData(office(), employee(civilServant), evaluator(), cycle(), CRITERIA, SCORES, grade, previous);
+        return new SheetData(office(), employee(civilServant), evaluator(), cycle(), CRITERIA, SCORES, grade, previous, List.of());
     }
 
     private static SheetData positive(SheetData d) {

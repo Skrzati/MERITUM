@@ -56,6 +56,22 @@ public final class Dtos {
     public record BulkCreateDto(List<CycleDto> created, List<BulkSkip> skipped) {
     }
 
+    public record CheckinDto(Long id, Long cycleId, Long authorId, LocalDate conductedOn, String topic, String summary,
+                             String nextSteps, boolean sharedWithEmployee) {
+        public static CheckinDto of(FeedbackCheckin c) {
+            return new CheckinDto(c.getId(), c.getCycleId(), c.getAuthorId(), c.getConductedOn(), c.getTopic(),
+                    c.getSummary(), c.getNextSteps(), c.isSharedWithEmployee());
+        }
+    }
+
+    public record IprzItemDto(Long id, Long cycleId, String criterionCode, String actionTitle, IprzItem.FormType formType,
+                              LocalDate targetDate, IprzItem.Status status) {
+        public static IprzItemDto of(IprzItem i) {
+            return new IprzItemDto(i.getId(), i.getCycleId(), i.getCriterionCode(), i.getActionTitle(), i.getFormType(),
+                    i.getTargetDate(), i.getStatus());
+        }
+    }
+
     /**
      * @param criteriaDeadline       § 7 — termin ustalenia kryteriów (30 dni / 7 dni po ocenie negatywnej)
      * @param mandatoryGradeEligible art. 89 ust. 2 — obligatoryjny kolejny stopień służbowy
@@ -73,7 +89,8 @@ public final class Dtos {
                            OffsetDateTime dgDecidedAt, boolean mandatoryGradeEligible,
                            LocalDate mandatoryGradeDeadline, String delayReason, SignatureMethod signatureMethod,
                            long overdueDays, boolean officeHasDgRole, String appealAuthority,
-                           PreviousEvaluation previousEvaluation) {
+                           PreviousEvaluation previousEvaluation, EvaluationCycle.IprzStatus iprzStatus,
+                           Long iprzApprovedBy, OffsetDateTime iprzApprovedAt, OffsetDateTime iprzEmployeeAckAt) {
         /** Pola wyliczane: terminy, art. 89 ust. 2, opóźnienie, organ rozpatrujący sprzeciw, poprzednia ocena. */
         public record Facts(LocalDate criteriaDeadline, boolean gradeEligible, LocalDate gradeDeadline, long overdueDays,
                             boolean officeHasDgRole, PreviousEvaluation previousEvaluation) {
@@ -91,7 +108,8 @@ public final class Dtos {
                     c.getAppealText(), c.getAppealedAt(), c.getAppealDecisionDeadline(), c.getDgDecision(),
                     c.getDgComment(), c.getDgDecidedAt(), f.gradeEligible(), f.gradeDeadline(), c.getDelayReason(),
                     c.getSignatureMethod(), f.overdueDays(), f.officeHasDgRole(),
-                    AppealAuthority.of(f.officeHasDgRole()).label(), f.previousEvaluation());
+                    AppealAuthority.of(f.officeHasDgRole()).label(), f.previousEvaluation(), c.getIprzStatus(),
+                    c.getIprzApprovedBy(), c.getIprzApprovedAt(), c.getIprzEmployeeAckAt());
         }
 
         public static CycleDto of(EvaluationCycle c) {

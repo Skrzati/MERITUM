@@ -5,15 +5,23 @@ package pl.gov.kprm.oceny.rules;
  * kierownik urzędu (uwaga KPRM do wzoru arkusza). W systemie rolę pełni użytkownik z rolą DG.
  */
 public enum AppealAuthority {
-    DIRECTOR_GENERAL("Dyrektor Generalny", "dyrektora generalnego urzędu"),
-    HEAD_OF_OFFICE("Kierownik urzędu", "kierownika urzędu");
+    DIRECTOR_GENERAL("Dyrektor Generalny", "dyrektora generalnego urzędu", ""),
+    HEAD_OF_OFFICE("Kierownik urzędu", "kierownika urzędu",
+            " (art. 25 ust. 9 ustawy o służbie cywilnej — zadania dyrektora generalnego wykonuje kierownik urzędu)");
 
     private final String label;
     private final String genitive;
+    private final String legalBasis;
 
-    AppealAuthority(String label, String genitive) {
+    AppealAuthority(String label, String genitive, String legalBasis) {
         this.label = label;
         this.genitive = genitive;
+        this.legalBasis = legalBasis;
+    }
+
+    /** Podstawa prawna dopisywana w pouczeniu, gdy organem jest kierownik urzędu. */
+    public String legalBasis() {
+        return legalBasis;
     }
 
     public static AppealAuthority of(boolean officeHasDgRole) {

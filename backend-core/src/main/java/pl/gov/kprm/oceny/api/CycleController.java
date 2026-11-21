@@ -16,6 +16,9 @@ import pl.gov.kprm.oceny.service.CycleWorkflowService.BulkResult;
 import pl.gov.kprm.oceny.service.CycleWorkflowService.CorrectionFields;
 import pl.gov.kprm.oceny.service.CycleWorkflowService.DuePreview;
 import pl.gov.kprm.oceny.service.CycleWorkflowService.HrFacts;
+import pl.gov.kprm.oceny.domain.IprzItem;
+import pl.gov.kprm.oceny.rules.RuleViolationException;
+import pl.gov.kprm.oceny.service.DevelopmentService;
 import pl.gov.kprm.oceny.service.EvaluationHistoryService;
 import pl.gov.kprm.oceny.service.IntegrationExportService;
 import pl.gov.kprm.oceny.service.Paging;
@@ -38,6 +41,7 @@ public class CycleController {
     private final PdfExportService pdfExport;
     private final IntegrationExportService integrations;
     private final EvaluationHistoryService evaluationHistory;
+    private final DevelopmentService development;
     private final CycleMapper mapper;
 
     @GetMapping
@@ -83,6 +87,58 @@ public class CycleController {
         return mapper.toDto(workflow.adminCorrection(id, user, req.targetStatus(), req.reason(),
                 new CorrectionFields(req.criteriaInterviewDate(), req.criteriaConfirmedOn(), req.evaluationInterviewDate(),
                         req.evaluatedOn(), req.acknowledgedAt(), req.place(), req.startDate(), req.dueDate())));
+    }
+
+    @GetMapping("/{id}/checkins")
+    public List<CheckinDto> checkins(@PathVariable Long id, @CurrentUser User user) {
+        return development.checkins(id, user).stream().map(CheckinDto::of).toList();
+    }
+
+    /** Bieżąca informacja zwrotna (Standardy ZZL) — zapis: oceniający / zastępca; resetuje przypomnienie kwartalne. */
+    @PostMapping("/{id}/checkins")
+    @ResponseStatus(HttpStatus.CREATED)
+    public CheckinDto addCheckin(@PathVariable Long id, @CurrentUser User user, @Valid @RequestBody CheckinRequest req) {
+        return CheckinDto.of(development.addCheckin(id, user, new DevelopmentService.CheckinInput(req.conductedOn(),
+                req.topic(), req.summary(), req.nextSteps(), req.sharedWithEmployee())));
+    }
+
+    @GetMapping("/{id}/iprz-items")
+    public List<IprzItemDto> iprzItems(@PathVariable Long id, @CurrentUser User user) {
+        return development.iprzItems(id, user).stream().map(IprzItemDto::of).toList();
+    }
+
+    @PostMapping("/{id}/iprz-items")
+    @ResponseStatus(HttpStatus.CREATED)
+    public IprzItemDto addIprzItem(@PathVariable Long id, @CurrentUser User user, @Valid @RequestBody IprzItemRequest req) {
+        if (req.actionTitle() == null || req.actionTitle().isBlank() || req.formType() == null) {
+            throw new RuleViolationException(List.of("Działanie IPRZ wymaga nazwy i formy rozwoju"));
+        }
+        IprzItem item = req.toItem();
+        if (item.getStatus() == null) item.setStatus(IprzItem.Status.PLANNED);
+        return IprzItemDto.of(development.addIprzItem(id, user, item));
+    }
+
+    @PatchMapping("/{id}/iprz-items/{itemId}")
+    public IprzItemDto updateIprzItem(@PathVariable Long id, @PathVariable Long itemId, @CurrentUser User user,
+                                      @Valid @RequestBody IprzItemRequest req) {
+        return IprzItemDto.of(development.updateIprzItem(id, itemId, user, req.toItem()));
+    }
+
+    @DeleteMapping("/{id}/iprz-items/{itemId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteIprzItem(@PathVariable Long id, @PathVariable Long itemId, @CurrentUser User user) {
+        development.deleteIprzItem(id, itemId, user);
+    }
+
+    /** Art. 108: zatwierdzenie IPRZ przez DG / kierownika urzędu (audyt IPRZ_APPROVED). */
+    @PostMapping("/{id}/iprz/approve")
+    public CycleDto approveIprz(@PathVariable Long id, @CurrentUser User user) {
+        return mapper.toDto(development.approve(id, user));
+    }
+
+    @PostMapping("/{id}/iprz/ack")
+    public CycleDto acknowledgeIprz(@PathVariable Long id, @CurrentUser User user) {
+        return mapper.toDto(development.acknowledge(id, user));
     }
 
     /** Historia ocen ocenianego (wgląd w historię ocen) — dla stron cyklu i kadr. */

@@ -17,6 +17,8 @@ public interface EmployeeNoteRepository extends JpaRepository<EmployeeNote, Long
 
     boolean existsByAuthorId(Long authorId);
 
+    List<EmployeeNote> findByCycleIdInOrderByCreatedAtAsc(Collection<Long> cycleIds);
+
     void deleteByCycleIdIn(Collection<Long> cycleIds);
 
     /** Data ostatniej notatki per cykl — jedno zapytanie dla przypomnień kwartalnych. */

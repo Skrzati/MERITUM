@@ -7,4 +7,6 @@ import java.util.List;
 
 public interface AbsenceRepository extends JpaRepository<Absence, Long> {
     List<Absence> findByUserIdOrderByStartDateAsc(Long userId);
+
+    List<Absence> findByUserIdIn(java.util.Collection<Long> userIds);
 }

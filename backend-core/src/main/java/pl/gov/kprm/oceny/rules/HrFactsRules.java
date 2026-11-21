@@ -14,6 +14,15 @@ public final class HrFactsRules {
     private HrFactsRules() {
     }
 
+    /** Sygnały do docenienia — te same co w ai-gateway (assistants.APPRECIATION_RE). */
+    private static final Pattern APPRECIATION = Pattern.compile(
+            "dotrzyman|wdroż|przejęł|przejął|sukces|pochwał|zrealizowa|terminowo|poprawa",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+
+    public static boolean signalsAppreciation(String note) {
+        return note != null && APPRECIATION.matcher(note).find();
+    }
+
     public static boolean signalsOverload(String note) {
         return note != null && OVERLOAD.matcher(note).find();
     }

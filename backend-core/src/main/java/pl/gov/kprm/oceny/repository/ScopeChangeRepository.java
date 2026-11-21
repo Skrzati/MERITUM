@@ -7,4 +7,6 @@ import java.util.List;
 
 public interface ScopeChangeRepository extends JpaRepository<ScopeChange, Long> {
     List<ScopeChange> findByCycleIdOrderByChangeDateAsc(Long cycleId);
+
+    List<ScopeChange> findByUserIdIn(java.util.Collection<Long> userIds);
 }

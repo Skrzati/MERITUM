@@ -70,4 +70,12 @@ public class EvaluationCycle {
     @Enumerated(EnumType.STRING)
     private PerformanceLevel prevEvaluationLevel;
     private LocalDate prevEvaluationDate;
+    /** Art. 108: IPRZ ustala przełożony, zatwierdza kierownictwo (DG / kierownik urzędu), oceniany się zapoznaje. */
+    @Enumerated(EnumType.STRING)
+    private IprzStatus iprzStatus = IprzStatus.DRAFT;
+    private Long iprzApprovedBy;
+    private OffsetDateTime iprzApprovedAt;
+    private OffsetDateTime iprzEmployeeAckAt;
+
+    public enum IprzStatus { DRAFT, PROPOSED, APPROVED }
 }

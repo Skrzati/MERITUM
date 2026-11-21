@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pl.gov.kprm.oceny.domain.*;
 import pl.gov.kprm.oceny.repository.EmployeeNoteRepository;
+import pl.gov.kprm.oceny.repository.FeedbackCheckinRepository;
 import pl.gov.kprm.oceny.repository.OfficeRepository;
 import pl.gov.kprm.oceny.repository.RescheduleRequestRepository;
 import pl.gov.kprm.oceny.repository.UserRepository;
@@ -43,6 +44,7 @@ public class NotificationService {
     private final EmployeeNoteRepository notes;
     private final RescheduleRequestRepository reschedules;
     private final OfficeRepository offices;
+    private final FeedbackCheckinRepository checkins;
     private final Clock clock;
 
     public enum Type {
@@ -84,6 +86,7 @@ public class NotificationService {
     }
 
     private record Context(Map<Long, String> names, Map<Long, CycleHistory> histories, Map<Long, LocalDate> lastNote,
+                           Map<Long, LocalDate> lastCheckin,
                            Set<Long> pendingReschedule, Map<Long, Boolean> officeHasDg, Set<Long> substituted,
                            boolean officeStaff) {
     }
@@ -94,12 +97,14 @@ public class NotificationService {
         for (Object[] row : notes.lastNoteAt(ids)) {
             lastNote.put((Long) row[0], ((OffsetDateTime) row[1]).atZoneSameInstant(clock.getZone()).toLocalDate());
         }
+        Map<Long, LocalDate> lastCheckin = new HashMap<>();
+        checkins.lastCheckinOn(ids).forEach(r -> lastCheckin.put((Long) r[0], (LocalDate) r[1]));
         Set<Long> pending = reschedules.findByCycleIdInAndStatus(ids, RescheduleStatus.PENDING).stream()
                 .map(RescheduleRequest::getCycleId).collect(Collectors.toSet());
         Map<Long, Boolean> hasDg = offices.findAllById(visible.stream().map(EvaluationCycle::getOfficeId).collect(Collectors.toSet()))
                 .stream().collect(Collectors.toMap(Office::getId, Office::isHasDgRole));
         return new Context(UserNames.byId(users, visible.stream().map(EvaluationCycle::getEmployeeId).toList()),
-                history.forCycles(visible), lastNote, pending, hasDg, substitutions.substitutedBy(user.getId()),
+                history.forCycles(visible), lastNote, lastCheckin, pending, hasDg, substitutions.substitutedBy(user.getId()),
                 user.getRole() == Role.HR || user.getRole() == Role.DG);
     }
 
@@ -136,7 +141,9 @@ public class NotificationService {
     /** Przypomnienia dla oceniającego (i jego aktywnego zastępcy). */
     private void evaluatorReminders(EvaluationCycle c, String who, LocalDate today, Context ctx, List<Notification> out) {
         if (c.getStatus() == CycleStatus.OBSERVATION) {
-            LocalDate last = CheckinRules.lastActivity(c.getStartDate(), c.getCriteriaConfirmedOn(), ctx.lastNote.get(c.getId()));
+            // odbyty check-in (bieżąca informacja zwrotna) resetuje licznik 90 dni
+            LocalDate last = CheckinRules.lastActivity(c.getStartDate(), c.getCriteriaConfirmedOn(),
+                    ctx.lastNote.get(c.getId()), ctx.lastCheckin.get(c.getId()));
             long days = CheckinRules.daysSince(last, today);
             CheckinRules.Urgency urgency = CheckinRules.urgency(days);
             if (urgency != CheckinRules.Urgency.NONE) {

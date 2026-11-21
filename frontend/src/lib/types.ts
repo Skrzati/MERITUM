@@ -17,7 +17,10 @@ export type SignatureMethod = "MOBYWATEL_QES" | "PAPER_HYBRID" | "SYSTEM_DEMO";
 export type RescheduleMode = "EVALUATOR_CHANGE" | "EMPLOYEE_ABSENCE" | "EVALUATOR_ABSENCE" | "EMPLOYEE_REQUEST";
 export type RescheduleStatus = "PENDING" | "APPLIED" | "REJECTED";
 export type ScopeChangeOutcome = "NONE" | "CRITERIA_RESET" | "EVALUATION_REQUIRED";
-export type InterviewStage = "INITIAL" | "EVALUATION";
+export type InterviewStage = "INITIAL" | "EVALUATION" | "FEEDBACK";
+export type IprzStatus = "DRAFT" | "PROPOSED" | "APPROVED";
+export type IprzFormType = "SZKOLENIE" | "MENTORING" | "SAMOKSZTALCENIE" | "PROJEKT" | "INNE";
+export type IprzItemStatus = "PLANNED" | "IN_PROGRESS" | "DONE";
 export type EscalationLevel = "OCENIAJACY" | "ZASTEPCA" | "KADRY" | "DYREKTOR_GENERALNY";
 
 export interface User {
@@ -156,6 +159,56 @@ export interface Cycle {
   officeHasDgRole: boolean;
   appealAuthority: string;
   previousEvaluation: PreviousEvaluation | null;
+  iprzStatus: IprzStatus;
+  iprzApprovedBy: number | null;
+  iprzApprovedAt: string | null;
+  iprzEmployeeAckAt: string | null;
+}
+
+export interface FeedbackCheckin {
+  id: number;
+  cycleId: number;
+  authorId: number;
+  conductedOn: string;
+  topic: string;
+  summary: string;
+  nextSteps: string | null;
+  sharedWithEmployee: boolean;
+}
+
+export interface IprzItem {
+  id: number;
+  cycleId: number;
+  criterionCode: string | null;
+  actionTitle: string;
+  formType: IprzFormType;
+  targetDate: string | null;
+  status: IprzItemStatus;
+}
+
+export interface TeamOverview {
+  competencies: { employeeId: number; fullName: string; positionTitle: string | null; cycleId: number | null; scores: Record<string, number> }[];
+  teamAverages: { code: string; name: string; average: number; rated: number }[];
+  mentoring: {
+    criterionCode: string;
+    criterionName: string;
+    mentorId: number;
+    mentorName: string;
+    mentorScore: number;
+    menteeId: number;
+    menteeName: string;
+    menteeScore: number;
+  }[];
+  signals: {
+    employeeId: number;
+    fullName: string;
+    activeCycleId: number | null;
+    absenceDays6m: number;
+    scopeChangesCount: number;
+    overloadNotesCount: number;
+    daysSinceLastActivity: number | null;
+    appreciationSnippet: string | null;
+  }[];
 }
 
 export interface RescheduleRequest {
