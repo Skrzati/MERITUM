@@ -46,3 +46,19 @@ def test_same_person_same_token_across_texts():
 def test_does_not_mask_regular_capitalised_words():
     result = mask_pii("Wdrożenie KSeF zakończono w terminie. Szkolenie odbyło się w Warszawie.")
     assert "[OSOBA" not in result.masked
+
+
+def test_masks_inflected_short_first_names_of_unknown_persons():
+    result = mask_pii("Raport dla Jana Kowalskiego. Spotkanie z Ewą Nowak, notatka od Janem Wiśniewskim.")
+
+    assert "Kowalsk" not in result.masked and "Nowak" not in result.masked and "Wiśniewsk" not in result.masked
+    assert "Jan" not in result.masked and "Ew" not in result.masked
+    assert result.masked.count("[OSOBA_") == 3
+
+
+def test_short_name_stems_do_not_mask_ordinary_words():
+    from app.pii import is_first_name
+
+    for word in ["Janina", "Jankowy", "Ewaluacja", "Ewidencja", "Ewentualnie"]:
+        assert not is_first_name(word), word
+    assert is_first_name("Jana") and is_first_name("Ewie") and is_first_name("Ewę")

@@ -45,6 +45,10 @@ DECLENSION_ENDINGS = {
     "iemu", "im", "ich", "ej", "ego", "emu", "ym", "ych", "ze", "ce", "la", "lem", "lowi", "le", "ka", "kiem", "kowi",
     "ku", "ła", "łem", "łowi",
 }
+# Imiona 3-literowe mają rdzeń 2–3 liter — tylko końcówki ich odmiany (Jana, Janem, Janowi; Ewy, Ewie, Ewą/Ewę),
+# żeby nie łapać przypadkowych słów zaczynających się od tego rdzenia.
+SHORT_NAME_LEN = 3
+SHORT_NAME_ENDINGS = {"", "a", "y", "e", "ie", "o", "u", "em", "om", "owi"}
 
 
 def _fold(word: str) -> str:
@@ -62,14 +66,15 @@ def _stem(word: str) -> str:
     return w
 
 
-def _inflects(word: str, base: str) -> bool:
+def _inflects(word: str, base: str, endings=DECLENSION_ENDINGS) -> bool:
     """Czy słowo jest formą odmienioną imienia/nazwiska (Kowal -> Kowala, ale nie Kowalika)."""
     stem, w = _stem(base), _fold(word)
-    return w.startswith(stem) and w[len(stem):] in DECLENSION_ENDINGS
+    return w.startswith(stem) and w[len(stem):] in endings
 
 
 def is_first_name(word: str) -> bool:
-    return word in FIRST_NAMES or any(_inflects(word, n) for n in FIRST_NAMES if len(n) >= 4)
+    return word in FIRST_NAMES or any(
+        _inflects(word, n, SHORT_NAME_ENDINGS if len(n) <= SHORT_NAME_LEN else DECLENSION_ENDINGS) for n in FIRST_NAMES)
 
 
 @dataclass
