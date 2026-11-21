@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ROLE_LABEL, ROLE_ORDER } from "@/lib/labels";
+import { ROLE_LABEL, ROLE_ORDER, roleLabel } from "@/lib/labels";
 import type { User } from "@/lib/types";
 import { Alert, Button, Field, inputClass } from "./ui";
 import { useUser } from "./UserProvider";
@@ -85,7 +85,8 @@ export function LoginModal({ onClose }: { onClose: () => void }) {
           <select className={inputClass} value={userId} onChange={(e) => setUserId(Number(e.target.value))}>
             {users.map((u) => (
               <option key={u.id} value={u.id}>
-                {u.fullName} — {ROLE_LABEL[u.role]}
+                {u.fullName} — {roleLabel(u)}
+                {u.officeName ? ` · ${u.officeName}` : ""}
               </option>
             ))}
           </select>

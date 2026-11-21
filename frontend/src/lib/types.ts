@@ -36,7 +36,61 @@ export interface User {
   appointmentYear?: number | null;
   civilServiceGrade?: number | null;
   lastGradeDate?: string | null;
+  /** Z /api/auth/demo-users: urząd użytkownika (organ rozpatrujący sprzeciw zależy od stanowiska DG). */
+  officeName?: string | null;
+  officeCity?: string | null;
+  officeHasDgRole?: boolean;
+  /** Z danych kadrowych: false = konto zanonimizowane. */
+  active?: boolean;
 }
+
+export type HistorySourceType = "SYSTEM" | "HISTORICAL" | "MANUAL";
+
+export interface PreviousEvaluation {
+  outcome: Outcome;
+  level: PerformanceLevel;
+  evaluatedOn: string;
+  source: HistorySourceType;
+}
+
+export interface HistoryEntry {
+  id: number;
+  cycleId: number | null;
+  outcome: Outcome;
+  level: PerformanceLevel;
+  evaluatedOn: string;
+  source: "SYSTEM" | "HISTORICAL";
+}
+
+export interface Substitution {
+  id: number;
+  officeId: number;
+  evaluatorId: number;
+  deputyId: number;
+  startDate: string;
+  endDate: string;
+  reason: string;
+  createdBy: number;
+  activeToday: boolean;
+}
+
+export interface DuePreview {
+  startDate: string;
+  dueDate: string;
+  criteriaDeadline: string;
+  periodMonths: number;
+  schemaVersion: string;
+  suggestedSheet: SheetType;
+  defaultEvaluatorId: number | null;
+  defaultPlace: string | null;
+}
+
+export interface BulkCreateResult {
+  created: Cycle[];
+  skipped: { employeeId: number; reason: string }[];
+}
+
+export type RemovalOutcome = "DELETED" | "ANONYMIZED";
 
 export interface LoginResponse {
   accessToken: string;
@@ -98,6 +152,10 @@ export interface Cycle {
   delayReason: string | null;
   signatureMethod: SignatureMethod | null;
   overdueDays: number;
+  /** false — mały urząd bez stanowiska DG: sprzeciw rozpatruje kierownik urzędu. */
+  officeHasDgRole: boolean;
+  appealAuthority: string;
+  previousEvaluation: PreviousEvaluation | null;
 }
 
 export interface RescheduleRequest {
@@ -140,7 +198,16 @@ export interface HrFacts {
 }
 
 export interface NotificationItem {
-  type: "OVERDUE" | "DUE_SOON" | "CRITERIA_DUE" | "APPEAL_DECISION_DUE" | "MANDATORY_GRADE_DUE";
+  type:
+    | "OVERDUE"
+    | "DUE_SOON"
+    | "CRITERIA_DUE"
+    | "APPEAL_DECISION_DUE"
+    | "MANDATORY_GRADE_DUE"
+    | "QUARTERLY_CHECKIN"
+    | "GRADE_REQUEST_SUBMITTED"
+    | "RESCHEDULE_PENDING"
+    | "APPEAL_DECIDED";
   severity: "HIGH" | "MEDIUM" | "LOW";
   cycleId: number;
   dueDate: string | null;

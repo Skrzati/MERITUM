@@ -2,19 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Badge, Button, Card, Field, inputClass, ProblemAlert, Spinner } from "@/components/ui";
+import { useMemo, useState } from "react";
+import { AssignCycleDialog } from "@/components/AssignCycleDialog";
+import { Badge, Button, Card, ProblemAlert, Spinner } from "@/components/ui";
 import { useUser } from "@/components/UserProvider";
 import { api } from "@/lib/api";
-import { dueState, formatDate, ROLE_LABEL, STATUS_LABEL, STATUS_TONE, today } from "@/lib/labels";
-import type { Cycle, Schema, SheetType, User } from "@/lib/types";
+import { dueState, formatDate, roleLabel, STATUS_LABEL, STATUS_TONE, today } from "@/lib/labels";
+import type { Cycle, Schema, Substitution } from "@/lib/types";
 import { useAsync } from "@/lib/useAsync";
-
-const SHEETS: { value: SheetType; label: string }[] = [
-  { value: "A", label: "A — kierownik urzędu" },
-  { value: "B", label: "B — bezpośrednie kierowanie pracownikami" },
-  { value: "C", label: "C — pozostałe stanowiska" },
-];
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -30,13 +25,14 @@ export default function DashboardPage() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [actionError, setActionError] = useState<unknown>(null);
 
-  // HR — pracownicy urzędu z przełożonym; kierownik — wyłącznie bezpośredni podwładni.
-  const candidates = useMemo(() => {
-    if (!current) return [];
-    if (current.role === "HR") return users.filter((u) => u.officeId === current.officeId && u.supervisorId !== null);
-    return users.filter((u) => u.supervisorId === current.id);
-  }, [users, current]);
-  const canCreate = candidates.length > 0;
+  // Kadry i kierownictwo urzędu — wszyscy pracownicy; kierownik — bezpośredni podwładni.
+  const canCreate =
+    !!current && (current.role === "HR" || current.role === "DG" || users.some((u) => u.supervisorId === current.id));
+  const substitutions = useAsync(
+    async () => (current?.role === "EVALUATOR" || current?.role === "DG" ? api<Substitution[]>("/api/substitutions") : []),
+    [current?.id],
+  );
+  const mySubstitutions = (substitutions.data ?? []).filter((s) => s.activeToday || s.startDate > today());
 
   const startNext = async (cycleId: number) => {
     setBusyId(cycleId);
@@ -62,18 +58,36 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-2xl font-bold text-navy-900">Pulpit</h1>
           <p className="text-sm text-slate-700">
-            Cykle ocen widoczne dla roli <strong>{current ? ROLE_LABEL[current.role] : "—"}</strong>.
+            Cykle ocen widoczne dla roli <strong>{roleLabel(current)}</strong>
+            {current?.officeName ? ` · ${current.officeName}` : ""}.
           </p>
         </div>
-        {canCreate && <Button onClick={() => setCreating(true)}>+ Nowy cykl oceny</Button>}
+        {canCreate && <Button onClick={() => setCreating(true)}>+ Przypisz nową ocenę (utwórz cykl)</Button>}
       </div>
 
       {creating && (
-        <NewCycleDialog
-          candidates={candidates}
+        <AssignCycleDialog
           onClose={() => setCreating(false)}
-          onCreated={(c) => router.push(`/cycles/${c.id}`)}
+          onCreated={(created, mode) => (mode === "single" ? router.push(`/cycles/${created[0].id}`) : void cycles.reload())}
         />
+      )}
+
+      {mySubstitutions.length > 0 && current && (
+        <Card title="Zastępstwa">
+          <ul className="space-y-2 text-sm">
+            {mySubstitutions.map((s) => (
+              <li key={s.id} className="flex flex-wrap items-center gap-2">
+                <Badge tone={s.activeToday ? "green" : "slate"}>{s.activeToday ? "trwa" : "zaplanowane"}</Badge>
+                {s.deputyId === current.id
+                  ? `Zastępujesz: ${userName(s.evaluatorId)} — prowadzisz aktywne cykle tej osoby (oceny, notatki, rozmowy)`
+                  : `Twój zastępca: ${userName(s.deputyId)}`}
+                <span className="text-slate-600">
+                  ({formatDate(s.startDate)} – {formatDate(s.endDate)}; {s.reason})
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
       )}
 
       <Card title="Cykle oceny okresowej">
@@ -149,98 +163,5 @@ export default function DashboardPage() {
         )}
       </Card>
     </div>
-  );
-}
-
-function NewCycleDialog({
-  candidates,
-  onClose,
-  onCreated,
-}: {
-  candidates: User[];
-  onClose: () => void;
-  onCreated: (c: Cycle) => void;
-}) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
-  const [employeeId, setEmployeeId] = useState<number>(candidates[0]?.id ?? 0);
-  const [sheetType, setSheetType] = useState<SheetType>("C");
-  const [startDate, setStartDate] = useState(today());
-  const [reevaluation, setReevaluation] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<unknown>(null);
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    dialog?.showModal();
-    return () => dialog?.close();
-  }, []);
-
-  const create = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      onCreated(await api<Cycle>("/api/cycles", { body: { employeeId, sheetType, startDate, reevaluation } }));
-    } catch (e) {
-      setError(e);
-      setBusy(false);
-    }
-  };
-
-  return (
-    <dialog
-      ref={dialogRef}
-      onClose={onClose}
-      aria-labelledby="new-cycle-title"
-      className="w-full max-w-lg rounded-lg p-0 shadow-xl backdrop:bg-slate-900/50"
-    >
-      <div className="space-y-4 p-6">
-        <h2 id="new-cycle-title" className="text-lg font-semibold text-navy-900">
-          Nowy cykl oceny okresowej
-        </h2>
-        <Field label="Oceniany pracownik">
-          <select className={inputClass} value={employeeId} onChange={(e) => setEmployeeId(Number(e.target.value))}>
-            {candidates.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.fullName}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Rodzaj arkusza (§ 3)">
-          <select className={inputClass} value={sheetType} onChange={(e) => setSheetType(e.target.value as SheetType)}>
-            {SHEETS.map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Data rozpoczęcia okresu oceny">
-          <input type="date" className={inputClass} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-        </Field>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            className="h-4 w-4 accent-navy-700"
-            checked={reevaluation}
-            onChange={(e) => setReevaluation(e.target.checked)}
-          />
-          Ponowna ocena po ocenie negatywnej (6 miesięcy, art. 81 ust. 9)
-        </label>
-        <Alert tone="blue">
-          Cykl zawsze przypina <strong>najnowszą obowiązującą wersję schematu</strong> („prawo jako kod”), a termin
-          oceny wylicza z jej okresu — istniejące cykle zachowują swoją wersję (§ 13).
-        </Alert>
-        <ProblemAlert error={error} />
-        <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={onClose}>
-            Anuluj
-          </Button>
-          <Button onClick={create} busy={busy} disabled={!employeeId}>
-            Utwórz cykl
-          </Button>
-        </div>
-      </div>
-    </dialog>
   );
 }

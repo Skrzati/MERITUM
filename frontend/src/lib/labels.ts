@@ -1,4 +1,4 @@
-import type { Cycle, CycleStatus, Outcome, PerformanceLevel, Role } from "./types";
+import type { Cycle, CycleStatus, EscalationLevel, Outcome, PerformanceLevel, Role, SheetType, User } from "./types";
 
 export const ROLE_LABEL: Record<Role, string> = {
   EVALUATOR: "Kierownik",
@@ -89,4 +89,32 @@ export function dueState(c: Pick<Cycle, "dueDate" | "overdueDays" | "status" | "
   if (c.status === "COMPLETED" || c.status === "APPEALED" || c.evaluatedOn) return { tone: "green", label: "ocena sporządzona" };
   const days = Math.round((Date.parse(c.dueDate) - Date.parse(todayIso)) / 86_400_000);
   return days <= DUE_SOON_DAYS ? { tone: "amber", label: `zbliża się (${days} dni)` } : { tone: "green", label: "w terminie" };
+}
+
+/** Etykieta roli z uwzględnieniem małego urzędu: rola DG bez stanowiska dyrektora generalnego = kierownik urzędu. */
+export function roleLabel(user: Pick<User, "role" | "officeHasDgRole"> | null | undefined): string {
+  if (!user) return "—";
+  return user.role === "DG" && user.officeHasDgRole === false ? "Kierownik urzędu" : ROLE_LABEL[user.role];
+}
+
+export function escalationLabel(level: EscalationLevel, officeHasDgRole = true): string {
+  const labels: Record<EscalationLevel, string> = {
+    OCENIAJACY: "Oceniający (1–7 dni)",
+    ZASTEPCA: "Zastępca (8–14 dni)",
+    KADRY: "Kadry (15–30 dni)",
+    DYREKTOR_GENERALNY: officeHasDgRole ? "Dyrektor Generalny (> 30 dni)" : "Kierownik urzędu (> 30 dni)",
+  };
+  return labels[level];
+}
+
+export const SHEET_LABEL: Record<SheetType, string> = {
+  A: "A — kierownik urzędu",
+  B: "B — bezpośrednie kierowanie pracownikami",
+  C: "C — pozostałe stanowiska",
+};
+
+/** § 3 rozporządzenia: kreator arkusza na podstawie dwóch pytań. */
+export function sheetFromAnswers(isHeadOfOffice: boolean, managesPeople: boolean): SheetType {
+  if (isHeadOfOffice) return "A";
+  return managesPeople ? "B" : "C";
 }

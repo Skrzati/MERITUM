@@ -65,8 +65,8 @@ public class CurrentUserFilter extends OncePerRequestFilter {
             chain.doFilter(req, res);
             return;
         }
-        if (user.isEmpty()) {
-            res.sendError(HttpStatus.UNAUTHORIZED.value(), "Nieznany użytkownik");
+        if (user.isEmpty() || !user.get().isActive()) {
+            res.sendError(HttpStatus.UNAUTHORIZED.value(), "Nieznany lub nieaktywny użytkownik");
             return;
         }
         req.setAttribute(ATTR, user.get());

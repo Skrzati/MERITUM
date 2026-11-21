@@ -28,4 +28,6 @@ public class User {
     private Integer appointmentYear;
     private Integer civilServiceGrade;
     private LocalDate lastGradeDate;
+    /** false = konto zanonimizowane (dane osobowe usunięte, rekord zachowany dla kluczy obcych i audytu). */
+    private boolean active = true;
 }

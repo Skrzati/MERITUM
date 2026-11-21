@@ -65,4 +65,9 @@ public class EvaluationCycle {
     private String delayReason;
     @Enumerated(EnumType.STRING)
     private SignatureMethod signatureMethod;
+    @Enumerated(EnumType.STRING)
+    private EvaluationOutcome prevEvaluationOutcome;
+    @Enumerated(EnumType.STRING)
+    private PerformanceLevel prevEvaluationLevel;
+    private LocalDate prevEvaluationDate;
 }

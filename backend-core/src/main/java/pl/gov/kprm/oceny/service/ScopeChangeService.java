@@ -42,7 +42,7 @@ public class ScopeChangeService {
                               String description, boolean significant) {
         EvaluationCycle cycle = workflow.load(cycleId);
         boolean hr = user.getRole() == Role.HR && user.getOfficeId().equals(cycle.getOfficeId());
-        if (!hr && !user.getId().equals(cycle.getEvaluatorId())) {
+        if (!hr && !workflow.canActAsEvaluator(cycle, user)) {
             throw forbidden("Zmianę zakresu obowiązków rejestruje kadra lub oceniający");
         }
         if (!cycle.getStatus().isActive()) {

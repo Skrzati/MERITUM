@@ -40,6 +40,18 @@ class SheetHtmlRendererTest {
     }
 
     @Test
+    void appealInstructionNamesHeadOfOfficeWhenThereIsNoDirectorGeneral() {
+        SheetData withDg = data(true, null);
+        withDg.office().setHasDgRole(true);
+        assertThat(renderer.render(withDg)).contains("sprzeciw do dyrektora generalnego urzędu.");
+
+        SheetData smallOffice = data(true, null);
+        smallOffice.office().setHasDgRole(false);
+        assertThat(renderer.render(smallOffice)).contains("sprzeciw do kierownika urzędu.")
+                .doesNotContain("dyrektora generalnego");
+    }
+
+    @Test
     void marksLevelRowAndNegativeOutcomeWithX() {
         String html = renderer.render(data(true, null));
 

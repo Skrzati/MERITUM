@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import { formatDate, ROLE_LABEL, ROLE_ORDER } from "@/lib/labels";
+import { formatDate, ROLE_LABEL, ROLE_ORDER, roleLabel } from "@/lib/labels";
 import type { NotificationItem, Role, User } from "@/lib/types";
 import { useAsync } from "@/lib/useAsync";
 import { LoginModal } from "./LoginModal";
@@ -49,7 +49,8 @@ export function Header() {
                 <>
                   <span className="block font-semibold text-gov-text">{current.fullName}</span>
                   <span>
-                    {ROLE_LABEL[current.role]}
+                    {roleLabel(current)}
+                    {current.officeName ? ` · ${current.officeName}` : ""}
                     {current.civilServant ? " · urzędnik SC" : ""}
                     {identityProvider ? ` · ${identityProvider}` : ""}
                   </span>

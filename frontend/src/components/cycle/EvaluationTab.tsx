@@ -4,8 +4,16 @@ import { useState } from "react";
 import { AiDisclaimer, Alert, Badge, Button, Card, Field, inputClass, MaskedPrompt, ModeBadge, ProblemAlert } from "@/components/ui";
 import { useUser } from "@/components/UserProvider";
 import { api, coreAi } from "@/lib/api";
-import { LEVEL_LABEL, MAX_CIVIL_SERVICE_GRADE, OUTCOME_LABEL, previewAverage } from "@/lib/labels";
-import type { ConsistencyResponse, EvaluationResponse, EvaluationResult, InterviewPrepResponse, SocraticResponse } from "@/lib/types";
+import { formatDate, LEVEL_LABEL, MAX_CIVIL_SERVICE_GRADE, OUTCOME_LABEL, previewAverage } from "@/lib/labels";
+import type {
+  ConsistencyResponse,
+  EvaluationResponse,
+  EvaluationResult,
+  InterviewPrepResponse,
+  Outcome,
+  PerformanceLevel,
+  SocraticResponse,
+} from "@/lib/types";
 import type { CycleView } from "./context";
 import { DevelopmentCatalog, fetchInterviewPrep } from "./InterviewTab";
 import { ScorePicker } from "./ScorePicker";
@@ -29,6 +37,11 @@ export function EvaluationTab({ view, onOpenInterview }: { view: CycleView; onOp
   const [gender, setGender] = useState("");
   const [interviewDate, setInterviewDate] = useState(cycle.evaluationInterviewDate ?? "");
   const [delayReason, setDelayReason] = useState(cycle.delayReason ?? "");
+  const fromHistory = cycle.previousEvaluation && cycle.previousEvaluation.source !== "MANUAL" ? cycle.previousEvaluation : null;
+  const manualPrev = cycle.previousEvaluation?.source === "MANUAL" ? cycle.previousEvaluation : null;
+  const [prevOutcome, setPrevOutcome] = useState<Outcome | "">(manualPrev?.outcome ?? "");
+  const [prevLevel, setPrevLevel] = useState<PerformanceLevel | "">(manualPrev?.level ?? "");
+  const [prevDate, setPrevDate] = useState(manualPrev?.evaluatedOn ?? "");
   const [iprzPrep, setIprzPrep] = useState<InterviewPrepResponse | null>(null);
 
   const [busy, setBusy] = useState<string | null>(null);
@@ -52,6 +65,13 @@ export function EvaluationTab({ view, onOpenInterview }: { view: CycleView; onOp
     }
   };
 
+  /** Ręczne dane poprzedniej oceny tylko dla urzędnika SC i tylko gdy brak ich w historii (schemat pól, cz. II). */
+  const previousEvaluationBody = () => {
+    if (!civilServant || fromHistory) return null;
+    if (prevOutcome) return { outcome: prevOutcome, level: prevLevel || null, evaluatedOn: prevDate || null };
+    return manualPrev ? { outcome: null } : null;
+  };
+
   const evaluate = (submit: boolean) =>
     run(submit ? "submit" : "draft", async () => {
       setDraftSaved(false);
@@ -64,6 +84,7 @@ export function EvaluationTab({ view, onOpenInterview }: { view: CycleView; onOp
           gradeRequest: civilServant && !highestGrade && gradeRequested ? { requested: true, motivation } : null,
           evaluationInterviewDate: interviewDate || null,
           delayReason: overdue && delayReason.trim() ? delayReason : null,
+          previousEvaluation: previousEvaluationBody(),
           submit,
         },
       });
@@ -158,6 +179,40 @@ export function EvaluationTab({ view, onOpenInterview }: { view: CycleView; onOp
                 </Field>
               )}
             </div>
+            {civilServant && (
+              <fieldset className="rounded-md border border-slate-200 p-3">
+                <legend className="px-1 text-sm font-medium">Dane dotyczące poprzedniej oceny okresowej</legend>
+                {fromHistory ? (
+                  <p className="text-sm text-slate-800">
+                    {OUTCOME_LABEL[fromHistory.outcome]} · {LEVEL_LABEL[fromHistory.level]} · {formatDate(fromHistory.evaluatedOn)}{" "}
+                    <span className="text-xs text-slate-600">(uzupełnione automatycznie z historii ocen)</span>
+                  </p>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <Field label="Ocena">
+                      <select className={inputClass} value={prevOutcome} disabled={!editable} onChange={(e) => setPrevOutcome(e.target.value as Outcome | "")}>
+                        <option value="">brak</option>
+                        <option value="POSITIVE">pozytywna</option>
+                        <option value="NEGATIVE">negatywna</option>
+                      </select>
+                    </Field>
+                    <Field label="Poziom">
+                      <select className={inputClass} value={prevLevel} disabled={!editable || !prevOutcome} onChange={(e) => setPrevLevel(e.target.value as PerformanceLevel | "")}>
+                        <option value="">—</option>
+                        {(Object.keys(LEVEL_LABEL) as PerformanceLevel[]).map((l) => (
+                          <option key={l} value={l}>
+                            {LEVEL_LABEL[l]}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="Data sporządzenia">
+                      <input type="date" className={inputClass} value={prevDate} disabled={!editable || !prevOutcome} onChange={(e) => setPrevDate(e.target.value)} />
+                    </Field>
+                  </div>
+                )}
+              </fieldset>
+            )}
             {civilServant && highestGrade ? (
               <Alert tone="slate" title="Część III — oceniany ma najwyższy (9.) stopień służbowy">
                 Wniosek o przyznanie kolejnego stopnia służbowego nie może zostać złożony.

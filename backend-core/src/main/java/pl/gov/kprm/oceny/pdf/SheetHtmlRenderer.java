@@ -6,6 +6,7 @@ import pl.gov.kprm.oceny.domain.EvaluationCycle;
 import pl.gov.kprm.oceny.domain.EvaluationHistory;
 import pl.gov.kprm.oceny.domain.SignatureMethod;
 import pl.gov.kprm.oceny.domain.User;
+import pl.gov.kprm.oceny.rules.AppealAuthority;
 import pl.gov.kprm.oceny.rules.Criterion;
 import pl.gov.kprm.oceny.rules.EvaluationOutcome;
 import pl.gov.kprm.oceny.rules.EvaluationRuleEngine;
@@ -180,7 +181,7 @@ public class SheetHtmlRenderer {
         }
         h.append("<div class=\"note\"><b>Pouczenie</b><br>Na podstawie art. 83 ust. 1 ").append(ACT)
                 .append(" od oceny okresowej służy, w terminie 7 dni od dnia zapoznania się z oceną, sprzeciw do ")
-                .append("dyrektora generalnego urzędu.");
+                .append(AppealAuthority.of(d.office().isHasDgRole()).genitive()).append('.');
         if (c.getAppealDeadline() != null) {
             h.append("<br>Termin na wniesienie sprzeciwu upływa: ").append(date(c.getAppealDeadline())).append('.');
         }

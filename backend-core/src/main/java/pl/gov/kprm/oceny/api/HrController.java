@@ -5,19 +5,25 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import pl.gov.kprm.oceny.api.Dtos.CycleDto;
 import pl.gov.kprm.oceny.api.Dtos.GdprExportDto;
+import pl.gov.kprm.oceny.api.Dtos.HistoryDto;
 import pl.gov.kprm.oceny.api.Dtos.UserDto;
 import pl.gov.kprm.oceny.api.Requests.AbsenceRequest;
 import pl.gov.kprm.oceny.api.Requests.HandoverRequest;
+import pl.gov.kprm.oceny.api.Requests.HistoryRequest;
+import pl.gov.kprm.oceny.api.Requests.UpdateEmployeeRequest;
 import pl.gov.kprm.oceny.auth.CurrentUser;
 import pl.gov.kprm.oceny.domain.User;
 import pl.gov.kprm.oceny.service.HrService;
+import pl.gov.kprm.oceny.service.HrService.EmployeeUpdate;
 import pl.gov.kprm.oceny.service.HrService.HandoverResult;
+import pl.gov.kprm.oceny.service.HrService.RemovalOutcome;
 import pl.gov.kprm.oceny.service.HrService.ImportResult;
 import pl.gov.kprm.oceny.service.OverdueService;
 import pl.gov.kprm.oceny.service.OverdueService.OverdueItem;
@@ -26,6 +32,7 @@ import pl.gov.kprm.oceny.service.ReportExportService;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/hr")
@@ -55,8 +62,33 @@ public class HrController {
     /** Zwraca aktywne cykle pracownika z przeliczonym due_date. */
     @PostMapping("/absences")
     public List<CycleDto> registerAbsence(@CurrentUser User user, @Valid @RequestBody AbsenceRequest req) {
-        return hr.registerAbsence(user, req.userId(), req.startDate(), req.endDate(), req.reason())
-                .stream().map(mapper::toDto).toList();
+        return mapper.toDtos(hr.registerAbsence(user, req.userId(), req.startDate(), req.endDate(), req.reason()));
+    }
+
+    @PatchMapping("/employees/{id}")
+    public UserDto updateEmployee(@CurrentUser User user, @PathVariable Long id,
+                                  @Valid @RequestBody UpdateEmployeeRequest req) {
+        return UserDto.of(hr.updateEmployee(user, id, new EmployeeUpdate(req.firstName(), req.lastName(), req.department(),
+                req.positionTitle(), req.role(), req.civilServant(), req.civilServiceGrade(), req.appointmentYear(),
+                req.lastGradeDate(), req.supervisorId())));
+    }
+
+    /** Usunięcie danych pracownika: DELETED (brak śladów w procesie) albo ANONYMIZED (cykle/historia/audyt zachowane). */
+    @DeleteMapping("/employees/{id}")
+    public Map<String, RemovalOutcome> removeEmployee(@CurrentUser User user, @PathVariable Long id) {
+        return Map.of("outcome", hr.removeEmployee(user, id));
+    }
+
+    @GetMapping("/employees/{id}/history")
+    public List<HistoryDto> history(@CurrentUser User user, @PathVariable Long id) {
+        return hr.history(user, id).stream().map(HistoryDto::of).toList();
+    }
+
+    /** Ocena sprzed wdrożenia systemu (source = HISTORICAL). */
+    @PostMapping("/employees/{id}/history")
+    @ResponseStatus(HttpStatus.CREATED)
+    public HistoryDto addHistory(@CurrentUser User user, @PathVariable Long id, @Valid @RequestBody HistoryRequest req) {
+        return HistoryDto.of(hr.addHistory(user, id, req.outcome(), req.level(), req.evaluatedOn()));
     }
 
     @PostMapping("/handover")

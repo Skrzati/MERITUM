@@ -16,6 +16,17 @@ public enum CycleStatus {
             COMPLETED, EnumSet.of(APPEALED),
             APPEALED, EnumSet.of(COMPLETED, EVALUATION_DRAFT));
 
+    /** Tryb korekty (kadry / DG / admin KPRM): cofnięcie zablokowanego etapu z uzasadnieniem, poza zwykłym przepływem. */
+    private static final Map<CycleStatus, Set<CycleStatus>> CORRECTIONS = Map.of(
+            OBSERVATION, EnumSet.of(DRAFT_CRITERIA),
+            EVALUATION_DRAFT, EnumSet.of(OBSERVATION),
+            AWAITING_ACK, EnumSet.of(EVALUATION_DRAFT),
+            COMPLETED, EnumSet.of(AWAITING_ACK, EVALUATION_DRAFT));
+
+    public boolean canCorrectTo(CycleStatus target) {
+        return CORRECTIONS.getOrDefault(this, Set.of()).contains(target);
+    }
+
     public boolean canTransitionTo(CycleStatus target) {
         return TRANSITIONS.getOrDefault(this, Set.of()).contains(target);
     }

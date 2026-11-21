@@ -8,14 +8,19 @@ import pl.gov.kprm.oceny.domain.*;
 import pl.gov.kprm.oceny.repository.*;
 import pl.gov.kprm.oceny.rules.AbsencePeriod;
 import pl.gov.kprm.oceny.rules.DeadlineService;
+import pl.gov.kprm.oceny.rules.EvaluationOutcome;
+import pl.gov.kprm.oceny.rules.PerformanceLevel;
+import pl.gov.kprm.oceny.rules.RuleViolationException;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.*;
+import java.util.function.Consumer;
 
 import static pl.gov.kprm.oceny.service.Access.*;
 
@@ -25,6 +30,11 @@ import static pl.gov.kprm.oceny.service.Access.*;
 public class HrService {
     private static final Set<String> SORTABLE = Set.of("id", "fullName", "email", "role");
     private static final Set<Role> EVALUATOR_ROLES = EnumSet.of(Role.EVALUATOR, Role.DG);
+    private static final int MIN_GRADE = 1;
+    private static final int MAX_GRADE = 9;
+    private static final int MIN_APPOINTMENT_YEAR = 1990;
+    private static final String ANONYMIZED_NAME = "Pracownik zanonimizowany";
+    private static final String ANONYMIZED_EMAIL = "anonimizacja-%d@invalid.local";
     private static final Set<Role> IMPORTABLE_ROLES = EnumSet.of(Role.EVALUATOR, Role.EVALUATED, Role.HR);
 
     private final UserRepository users;
@@ -36,6 +46,9 @@ public class HrService {
     private final EvaluationHistoryRepository history;
     private final DeadlineService deadlines;
     private final AuditService audit;
+    private final RescheduleRequestRepository reschedules;
+    private final EvaluationHistoryService historyService;
+    private final Clock clock;
 
     public record ImportResult(int imported, List<String> skipped, List<String> errors) {
     }
@@ -80,11 +93,155 @@ public class HrService {
         List<EvaluationCycle> active = activeCycles(employee.getId());
         for (EvaluationCycle cycle : active) {
             LocalDate previous = cycle.getDueDate();
-            cycle.setDueDate(recalculateDue(cycle, periods));
-            audit.log(hr, cycle.getOfficeId(), "DUE_DATE_RECALCULATED", AuditService.CYCLE, cycle.getId(),
-                    Map.of("absence", start + ".." + end, "from", previous, "to", cycle.getDueDate()));
+            LocalDate recalculated = recalculateDue(cycle, periods);
+            Optional<LocalDate> rescheduled = appliedReschedule(cycle.getId());
+            // ręczna zmiana terminu (art. 81 ust. 8) nie może zostać cofnięta przeliczeniem nieobecności
+            boolean keepRescheduled = rescheduled.isPresent() && recalculated.isBefore(rescheduled.get());
+            cycle.setDueDate(keepRescheduled ? rescheduled.get() : recalculated);
+            Map<String, Object> p = new LinkedHashMap<>();
+            p.put("absence", start + ".." + end);
+            p.put("from", previous);
+            p.put("to", cycle.getDueDate());
+            p.put("recalculated", recalculated);
+            rescheduled.ifPresent(r -> p.put("rescheduledDueDate", r));
+            p.put("keptRescheduledDueDate", keepRescheduled);
+            audit.log(hr, cycle.getOfficeId(), "DUE_DATE_RECALCULATED", AuditService.CYCLE, cycle.getId(), p);
         }
         return active;
+    }
+
+    private Optional<LocalDate> appliedReschedule(Long cycleId) {
+        return reschedules.findByCycleIdAndStatus(cycleId, RescheduleStatus.APPLIED).stream()
+                .map(RescheduleRequest::getNewDueDate).filter(Objects::nonNull).max(LocalDate::compareTo);
+    }
+
+    /** Pola edytowalne przez kadry (null = bez zmian). */
+    public record EmployeeUpdate(String firstName, String lastName, String department, String positionTitle, Role role,
+                                 Boolean civilServant, Integer civilServiceGrade, Integer appointmentYear,
+                                 LocalDate lastGradeDate, Long supervisorId) {
+    }
+
+    public User updateEmployee(User hr, Long employeeId, EmployeeUpdate u) {
+        requireRole(hr, Role.HR);
+        User e = activeEmployee(hr, employeeId);
+        List<String> changed = new ArrayList<>();
+        if (u.role() != null && u.role() != e.getRole()) {
+            if (u.role() == Role.KPRM_ADMIN) {
+                throw forbidden("Kadry nie nadają roli administratora KPRM");
+            }
+            if (e.getId().equals(hr.getId())) {
+                throw conflict("Nie można zmienić własnej roli");
+            }
+            e.setRole(u.role());
+            changed.add("role");
+        }
+        if (u.civilServiceGrade() != null && (u.civilServiceGrade() < MIN_GRADE || u.civilServiceGrade() > MAX_GRADE)) {
+            throw new RuleViolationException(List.of("Stopień służbowy: od " + MIN_GRADE + " do " + MAX_GRADE));
+        }
+        int year = LocalDate.now(clock).getYear();
+        if (u.appointmentYear() != null && (u.appointmentYear() < MIN_APPOINTMENT_YEAR || u.appointmentYear() > year)) {
+            throw new RuleViolationException(List.of("Rok mianowania: od " + MIN_APPOINTMENT_YEAR + " do " + year));
+        }
+        set(changed, "firstName", e.getFirstName(), trim(u.firstName()), e::setFirstName);
+        set(changed, "lastName", e.getLastName(), trim(u.lastName()), e::setLastName);
+        set(changed, "department", e.getDepartment(), trim(u.department()), e::setDepartment);
+        set(changed, "positionTitle", e.getPositionTitle(), trim(u.positionTitle()), e::setPositionTitle);
+        set(changed, "civilServant", e.isCivilServant(), u.civilServant(), e::setCivilServant);
+        set(changed, "civilServiceGrade", e.getCivilServiceGrade(), u.civilServiceGrade(), e::setCivilServiceGrade);
+        set(changed, "appointmentYear", e.getAppointmentYear(), u.appointmentYear(), e::setAppointmentYear);
+        set(changed, "lastGradeDate", e.getLastGradeDate(), u.lastGradeDate(), e::setLastGradeDate);
+        if (changed.contains("firstName") || changed.contains("lastName")) {
+            String full = ((e.getFirstName() == null ? "" : e.getFirstName()) + " "
+                    + (e.getLastName() == null ? "" : e.getLastName())).trim();
+            if (!full.isEmpty()) {
+                e.setFullName(full);
+            }
+        }
+        if (u.supervisorId() != null && !u.supervisorId().equals(e.getSupervisorId())) {
+            handover(hr, e.getId(), u.supervisorId()); // zmiana podległości = przekazanie aktywnych cykli (§ 9 ust. 3)
+            changed.add("supervisorId");
+        }
+        if (!changed.isEmpty()) {
+            // w audycie tylko nazwy pól — wartości to dane osobowe
+            audit.log(hr, hr.getOfficeId(), "EMPLOYEE_UPDATED", AuditService.USER, e.getId(), Map.of("fields", changed));
+        }
+        return e;
+    }
+
+    public enum RemovalOutcome { DELETED, ANONYMIZED }
+
+    /**
+     * Usunięcie danych pracownika: bez śladów w procesie — usunięcie rekordu; z cyklami, historią lub audytem —
+     * anonimizacja (klucze obce i dokumentacja oceny pozostają, dane osobowe i notatki robocze są usuwane).
+     */
+    public RemovalOutcome removeEmployee(User hr, Long employeeId) {
+        requireRole(hr, Role.HR);
+        User e = activeEmployee(hr, employeeId);
+        if (e.getId().equals(hr.getId())) {
+            throw conflict("Nie można usunąć własnego konta");
+        }
+        if (cycles.findByEmployeeIdOrEvaluatorIdOrderByIdAsc(e.getId(), e.getId()).stream()
+                .anyMatch(c -> c.getStatus().isActive())) {
+            throw conflict("Pracownik ma aktywny cykl oceny (jako oceniany lub oceniający) — najpierw go zamknij lub przekaż");
+        }
+        if (users.existsBySupervisorId(e.getId())) {
+            throw conflict("Pracownik jest przełożonym — najpierw zmień podległość jego podwładnych");
+        }
+        absences.deleteAll(absences.findByUserIdOrderByStartDateAsc(e.getId()));
+        if (!users.isReferenced(e.getId())) {
+            users.delete(e);
+            audit.log(hr, hr.getOfficeId(), "EMPLOYEE_DELETED", AuditService.USER, employeeId, Map.of());
+            return RemovalOutcome.DELETED;
+        }
+        List<Long> ownCycleIds = cycles.findByEmployeeIdOrderByIdAsc(e.getId()).stream().map(EvaluationCycle::getId).toList();
+        if (!ownCycleIds.isEmpty()) {
+            notes.deleteByCycleIdIn(ownCycleIds);
+        }
+        e.setFullName(ANONYMIZED_NAME + " #" + e.getId());
+        e.setEmail(String.format(ANONYMIZED_EMAIL, e.getId()));
+        e.setFirstName(null);
+        e.setLastName(null);
+        e.setDepartment(null);
+        e.setPositionTitle(null);
+        e.setAppointmentYear(null);
+        e.setCivilServiceGrade(null);
+        e.setLastGradeDate(null);
+        e.setSupervisorId(null);
+        e.setActive(false);
+        audit.log(hr, hr.getOfficeId(), "EMPLOYEE_ANONYMIZED", AuditService.USER, employeeId,
+                Map.of("cyclesKept", ownCycleIds.size()));
+        return RemovalOutcome.ANONYMIZED;
+    }
+
+    @Transactional(readOnly = true)
+    public List<EvaluationHistory> history(User hr, Long employeeId) {
+        requireRole(hr, Role.HR);
+        return historyService.of(employeeInOffice(hr, employeeId).getId());
+    }
+
+    public EvaluationHistory addHistory(User hr, Long employeeId, EvaluationOutcome outcome, PerformanceLevel level,
+                                        LocalDate evaluatedOn) {
+        requireRole(hr, Role.HR);
+        return historyService.addHistorical(hr, activeEmployee(hr, employeeId), outcome, level, evaluatedOn);
+    }
+
+    private User activeEmployee(User hr, Long id) {
+        User e = employeeInOffice(hr, id);
+        if (!e.isActive()) {
+            throw conflict("Konto jest zanonimizowane");
+        }
+        return e;
+    }
+
+    private static String trim(String s) {
+        return s == null ? null : s.trim();
+    }
+
+    private static <T> void set(List<String> changed, String field, T current, T requested, Consumer<T> setter) {
+        if (requested != null && !requested.equals(current)) {
+            setter.accept(requested);
+            changed.add(field);
+        }
     }
 
     /** § 9 ust. 3: nowy przełożony przejmuje aktywny cykl wraz z notatkami; kryteria pozostają bez zmian. */

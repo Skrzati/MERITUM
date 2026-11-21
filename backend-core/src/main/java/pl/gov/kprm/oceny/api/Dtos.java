@@ -5,6 +5,9 @@ import pl.gov.kprm.oceny.domain.*;
 import pl.gov.kprm.oceny.rules.EvaluationOutcome;
 import pl.gov.kprm.oceny.rules.EvaluationResult;
 import pl.gov.kprm.oceny.rules.PerformanceLevel;
+import pl.gov.kprm.oceny.rules.AppealAuthority;
+import pl.gov.kprm.oceny.service.CycleWorkflowService.BulkSkip;
+import pl.gov.kprm.oceny.service.EvaluationHistoryService.PreviousEvaluation;
 import pl.gov.kprm.oceny.service.HrService.GdprExport;
 
 import java.math.BigDecimal;
@@ -21,21 +24,36 @@ public final class Dtos {
      * są potrzebne interfejsowi (podpowiedź kryteriów, blokada wniosku przy 9. stopniu).
      */
     public record DemoUserDto(Long id, Long officeId, String fullName, Role role, boolean civilServant, Long supervisorId,
-                              String department, String positionTitle, Integer civilServiceGrade) {
-        public static DemoUserDto of(User u) {
+                              String department, String positionTitle, Integer civilServiceGrade, String officeName,
+                              String officeCity, boolean officeHasDgRole) {
+        public static DemoUserDto of(User u, Office office) {
             return new DemoUserDto(u.getId(), u.getOfficeId(), u.getFullName(), u.getRole(), u.isCivilServant(),
-                    u.getSupervisorId(), u.getDepartment(), u.getPositionTitle(), u.getCivilServiceGrade());
+                    u.getSupervisorId(), u.getDepartment(), u.getPositionTitle(), u.getCivilServiceGrade(),
+                    office == null ? null : office.getName(), office == null ? null : office.getCity(),
+                    office == null || office.isHasDgRole());
         }
     }
 
     public record UserDto(Long id, Long officeId, String fullName, String firstName, String lastName, String email,
                           Role role, boolean civilServant, Long supervisorId, String department, String positionTitle,
-                          Integer appointmentYear, Integer civilServiceGrade, LocalDate lastGradeDate) {
+                          Integer appointmentYear, Integer civilServiceGrade, LocalDate lastGradeDate, boolean active) {
         public static UserDto of(User u) {
             return new UserDto(u.getId(), u.getOfficeId(), u.getFullName(), u.getFirstName(), u.getLastName(),
                     u.getEmail(), u.getRole(), u.isCivilServant(), u.getSupervisorId(), u.getDepartment(),
-                    u.getPositionTitle(), u.getAppointmentYear(), u.getCivilServiceGrade(), u.getLastGradeDate());
+                    u.getPositionTitle(), u.getAppointmentYear(), u.getCivilServiceGrade(), u.getLastGradeDate(),
+                    u.isActive());
         }
+    }
+
+    public record SubstitutionDto(Long id, Long officeId, Long evaluatorId, Long deputyId, LocalDate startDate,
+                                  LocalDate endDate, String reason, Long createdBy, boolean activeToday) {
+        public static SubstitutionDto of(EvaluatorSubstitution s, LocalDate today) {
+            return new SubstitutionDto(s.getId(), s.getOfficeId(), s.getEvaluatorId(), s.getDeputyId(), s.getStartDate(),
+                    s.getEndDate(), s.getReason(), s.getCreatedBy(), s.activeOn(today));
+        }
+    }
+
+    public record BulkCreateDto(List<CycleDto> created, List<BulkSkip> skipped) {
     }
 
     /**
@@ -54,23 +72,30 @@ public final class Dtos {
                            LocalDate appealDecisionDeadline, DgDecision dgDecision, String dgComment,
                            OffsetDateTime dgDecidedAt, boolean mandatoryGradeEligible,
                            LocalDate mandatoryGradeDeadline, String delayReason, SignatureMethod signatureMethod,
-                           long overdueDays) {
-        public static CycleDto of(EvaluationCycle c, LocalDate criteriaDeadline, boolean gradeEligible,
-                                  LocalDate gradeDeadline, long overdueDays) {
+                           long overdueDays, boolean officeHasDgRole, String appealAuthority,
+                           PreviousEvaluation previousEvaluation) {
+        /** Pola wyliczane: terminy, art. 89 ust. 2, opóźnienie, organ rozpatrujący sprzeciw, poprzednia ocena. */
+        public record Facts(LocalDate criteriaDeadline, boolean gradeEligible, LocalDate gradeDeadline, long overdueDays,
+                            boolean officeHasDgRole, PreviousEvaluation previousEvaluation) {
+            static final Facts NONE = new Facts(null, false, null, 0, true, null);
+        }
+
+        public static CycleDto of(EvaluationCycle c, Facts f) {
             return new CycleDto(c.getId(), c.getOfficeId(), c.getEmployeeId(), c.getEvaluatorId(),
                     c.getSchemaVersionId(), c.getSheetType(), c.getStatus(), c.isReevaluation(), c.getStartDate(),
-                    c.getDueDate(), criteriaDeadline, c.getCriteriaInterviewDate(), c.getCriteriaConfirmedOn(),
+                    c.getDueDate(), f.criteriaDeadline(), c.getCriteriaInterviewDate(), c.getCriteriaConfirmedOn(),
                     c.getEvaluationInterviewDate(), c.getEvaluatedOn(), c.getPlace(), c.getCriteriaJson(),
                     c.getScoresJson(), c.getAverageScore(), c.getPerformanceLevel(), c.getFinalResult(),
                     c.getResultExplanation(), c.getJustification(), c.getIprzNotes(), c.getGradeRequestJson(),
                     c.getAcknowledgedAt(), c.getRefusalReason(), c.getRefusalDate(), c.getAppealDeadline(),
                     c.getAppealText(), c.getAppealedAt(), c.getAppealDecisionDeadline(), c.getDgDecision(),
-                    c.getDgComment(), c.getDgDecidedAt(), gradeEligible, gradeDeadline, c.getDelayReason(),
-                    c.getSignatureMethod(), overdueDays);
+                    c.getDgComment(), c.getDgDecidedAt(), f.gradeEligible(), f.gradeDeadline(), c.getDelayReason(),
+                    c.getSignatureMethod(), f.overdueDays(), f.officeHasDgRole(),
+                    AppealAuthority.of(f.officeHasDgRole()).label(), f.previousEvaluation());
         }
 
         public static CycleDto of(EvaluationCycle c) {
-            return of(c, null, false, null, 0);
+            return of(c, Facts.NONE);
         }
     }
 

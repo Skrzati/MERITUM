@@ -12,7 +12,11 @@ import pl.gov.kprm.oceny.domain.User;
 import pl.gov.kprm.oceny.rules.Criterion;
 import pl.gov.kprm.oceny.rules.EvaluationResult;
 import pl.gov.kprm.oceny.service.CycleWorkflowService;
+import pl.gov.kprm.oceny.service.CycleWorkflowService.BulkResult;
+import pl.gov.kprm.oceny.service.CycleWorkflowService.CorrectionFields;
+import pl.gov.kprm.oceny.service.CycleWorkflowService.DuePreview;
 import pl.gov.kprm.oceny.service.CycleWorkflowService.HrFacts;
+import pl.gov.kprm.oceny.service.EvaluationHistoryService;
 import pl.gov.kprm.oceny.service.IntegrationExportService;
 import pl.gov.kprm.oceny.service.Paging;
 import pl.gov.kprm.oceny.service.IntegrationExportService.EzdPackage;
@@ -21,6 +25,7 @@ import pl.gov.kprm.oceny.service.RescheduleService;
 import pl.gov.kprm.oceny.service.ScopeChangeService;
 
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -32,19 +37,58 @@ public class CycleController {
     private final ScopeChangeService scopeChanges;
     private final PdfExportService pdfExport;
     private final IntegrationExportService integrations;
+    private final EvaluationHistoryService evaluationHistory;
     private final CycleMapper mapper;
 
     @GetMapping
     public List<CycleDto> myCycles(@CurrentUser User user, @RequestParam(required = false) Integer page,
                                    @RequestParam(required = false) Integer size) {
-        return workflow.visibleFor(user, Paging.of(page, size, Sort.unsorted())).stream().map(mapper::toDto).toList();
+        return mapper.toDtos(workflow.visibleFor(user, Paging.of(page, size, Sort.unsorted())));
     }
 
     /** Nowy cykl — zawsze z najnowszą obowiązującą wersją schematu. */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public CycleDto create(@CurrentUser User user, @Valid @RequestBody CreateCycleRequest req) {
-        return mapper.toDto(workflow.create(user, req.employeeId(), req.sheetType(), req.startDate(), req.reevaluation()));
+        return mapper.toDto(workflow.create(user, req.employeeId(), req.sheetType(), req.startDate(), req.reevaluation(),
+                req.evaluatorId(), req.place()));
+    }
+
+    /** Masowe otwarcie cykli (HR / DG) — lista pracowników albo cała komórka; osoby z aktywnym cyklem są pomijane. */
+    @PostMapping("/bulk")
+    @ResponseStatus(HttpStatus.CREATED)
+    public BulkCreateDto bulk(@CurrentUser User user, @Valid @RequestBody BulkCreateRequest req) {
+        BulkResult result = workflow.createBulk(user, req.employeeIds(), req.department(), req.startDate());
+        return new BulkCreateDto(mapper.toDtos(result.created()), result.skipped());
+    }
+
+    /** Podgląd terminu oceny, terminu kryteriów i arkusza przed utworzeniem cyklu. */
+    @GetMapping("/due-preview")
+    public DuePreview duePreview(@CurrentUser User user, @RequestParam Long employeeId,
+                                 @RequestParam(required = false) LocalDate startDate,
+                                 @RequestParam(defaultValue = "false") boolean reevaluation) {
+        return workflow.previewDue(user, employeeId, startDate, reevaluation);
+    }
+
+    @PatchMapping("/{id}/details")
+    public CycleDto updateDetails(@PathVariable Long id, @CurrentUser User user,
+                                  @Valid @RequestBody CycleDetailsRequest req) {
+        return mapper.toDto(workflow.updateDetails(id, user, req.place(), req.startDate(), req.dueDate(), req.reason()));
+    }
+
+    /** Tryb korekty: cofnięcie etapu lub korekta pól formalnych z uzasadnieniem (HR, DG — urząd; admin KPRM). */
+    @PostMapping("/{id}/admin-correction")
+    public CycleDto adminCorrection(@PathVariable Long id, @CurrentUser User user,
+                                    @Valid @RequestBody AdminCorrectionRequest req) {
+        return mapper.toDto(workflow.adminCorrection(id, user, req.targetStatus(), req.reason(),
+                new CorrectionFields(req.criteriaInterviewDate(), req.criteriaConfirmedOn(), req.evaluationInterviewDate(),
+                        req.evaluatedOn(), req.acknowledgedAt(), req.place(), req.startDate(), req.dueDate())));
+    }
+
+    /** Historia ocen ocenianego (wgląd w historię ocen) — dla stron cyklu i kadr. */
+    @GetMapping("/{id}/history")
+    public List<HistoryDto> history(@PathVariable Long id, @CurrentUser User user) {
+        return evaluationHistory.of(workflow.get(id, user).getEmployeeId()).stream().map(HistoryDto::of).toList();
     }
 
     @GetMapping("/{id}")
@@ -81,7 +125,7 @@ public class CycleController {
                                        @Valid @RequestBody EvaluateRequest req) {
         EvaluationResult result = workflow.evaluate(id, user, req.scores(), req.justification(), req.iprzNotes(),
                 req.gradeRequest(), req.evaluationInterviewDate(), req.submit(), req.delayReason(),
-                req.signatureMethod());
+                req.signatureMethod(), req.previousEvaluation());
         return new EvaluationResponse(mapper.toDto(workflow.get(id, user)), result);
     }
 

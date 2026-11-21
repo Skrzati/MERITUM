@@ -8,6 +8,7 @@ import { ChangesTab } from "@/components/cycle/ChangesTab";
 import type { CycleView } from "@/components/cycle/context";
 import { CriteriaTab } from "@/components/cycle/CriteriaTab";
 import { EvaluationTab } from "@/components/cycle/EvaluationTab";
+import { FormCorrectionPanel } from "@/components/cycle/FormCorrectionPanel";
 import { InterviewTab } from "@/components/cycle/InterviewTab";
 import { NotesTab } from "@/components/cycle/NotesTab";
 import { ProgressSteps } from "@/components/cycle/ProgressSteps";
@@ -23,7 +24,7 @@ const TABS = [
   { id: "interview", label: "2. Rozmowy i IPRZ" },
   { id: "notes", label: "3. Notatki i HR Partner" },
   { id: "evaluation", label: "4. Ocena i Sokratejskie AI" },
-  { id: "changes", label: "5. Termin (§ 8) i Zakres (§ 9)" },
+  { id: "changes", label: "5. Termin, zakres, korekta" },
   { id: "ack", label: "6. Zapoznanie, Podpis i PDF" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
@@ -103,6 +104,7 @@ export default function CyclePage() {
             <Badge tone={STATUS_TONE[cycle.status]}>{STATUS_LABEL[cycle.status]}</Badge>
             {cycle.overdueDays > 0 && <Badge tone="red">po terminie {cycle.overdueDays} dni</Badge>}
             {cycle.mandatoryGradeEligible && <Badge tone="green">Obligatoryjny stopień (art. 89 ust. 2)</Badge>}
+            {!cycle.officeHasDgRole && <Badge tone="amber">Urząd bez DG — sprzeciw: kierownik urzędu</Badge>}
             <Badge>schemat {state.data.schema?.versionCode ?? `#${cycle.schemaVersionId}`}</Badge>
             <Badge tone="blue">Twoja rola: {myRole}</Badge>
             {cycle.finalResult && (
@@ -140,7 +142,12 @@ export default function CyclePage() {
         {tab === "interview" && <InterviewTab view={view} />}
         {tab === "notes" && <NotesTab view={view} />}
         {tab === "evaluation" && <EvaluationTab view={view} onOpenInterview={() => setTab("interview")} />}
-        {tab === "changes" && <ChangesTab view={view} />}
+        {tab === "changes" && (
+          <div className="space-y-6">
+            <ChangesTab view={view} />
+            <FormCorrectionPanel view={view} />
+          </div>
+        )}
         {tab === "ack" && <AckTab view={view} />}
       </div>
     </div>

@@ -20,15 +20,18 @@
 │       ├── java/pl/gov/kprm/oceny/
 │       │   ├── config/       # AppConfig (Clock Europe/Warsaw)
 │       │   ├── domain/       # encje JPA + enumy (CycleStatus z mapą przejść, DgDecision, RescheduleMode/Status,
-│       │   │                 #   ScopeChangeOutcome, HistorySource, SignatureMethod, EscalationLevel); EvaluationHistory, WellbeingSurvey, ScopeChange, RescheduleRequest
+│       │   │                 #   ScopeChangeOutcome, HistorySource, SignatureMethod, EscalationLevel); EvaluationHistory, WellbeingSurvey, ScopeChange, RescheduleRequest,
+│       │   │                 #   EvaluatorSubstitution; CycleStatus ma też mapę CORRECTIONS (tryb korekty)
 │       │   ├── rules/        # czysta logika prawa, bez I/O: DeadlineService, EvaluationRuleEngine, CriteriaCatalog,
 │       │   │                 #   GradeRules (art. 89 ust. 2), RescheduleRules (art. 81 ust. 8), AnonymizedCount (k-anonimowość),
 │       │   │                 #   OverdueRules (dni po terminie + eskalacja), NextCycleRules (kolejny cykl),
-│       │   │                 #   HrFactsRules (dni nieobecności w okresie, sygnały przeciążenia w notatkach)
+│       │   │                 #   HrFactsRules (dni nieobecności w okresie, sygnały przeciążenia w notatkach),
+│       │   │                 #   CheckinRules (przypomnienie kwartalne 90/120 dni), AppealAuthority (DG albo kierownik urzędu)
 │       │   ├── service/      # CycleWorkflowService, EvaluationHistoryService, RescheduleService, ScopeChangeService,
 │       │   │                 #   WellbeingService, HrService, SchemaAdminService, StatsService, PdfExportService,
 │       │   │                 #   AiProxyService (audyt AI), OverdueService, NotificationService, AuditService, Access,
-│       │   │                 #   IntegrationExportService (.ics, EZD), ReportExportService (CSV)
+│       │   │                 #   IntegrationExportService (.ics, EZD), ReportExportService (CSV), SubstitutionService
+│       │   │                 #   (zastępstwa), Paging (opcjonalne page/size), UserNames (imiona zbiorczo — bez N+1)
 │       │   ├── pdf/          # SheetHtmlRenderer (wzór arkusza A/B/C 1:1), GotenbergClient (HTML -> PDF/A-2b)
 │       │   ├── export/       # czyste renderery: IcsCalendarRenderer (RFC 5545), CsvReportRenderer (BOM, „;”, <k)
 │       │   ├── repository/   # Spring Data JPA
@@ -42,9 +45,11 @@
 │           └── db/migration/            # Flyway: V1 schemat, V2 seed, V3 workflow + absences, V4 kryteria v1 (§ 4),
 │                                        #   V5 pola wzoru KPRM + historia/dobrostan/zakres/terminy + opisy kryteriów + seed demo,
 │                                        #   V6 delay_reason + signature_method + 2 cykle po terminie (ustalenia z mentorami),
-│                                        #   V7 anonimowa ankieta dobrostanu (bez user_id, data bez godziny) + spójne uzasadnienie cyklu #9
+│                                        #   V7 anonimowa ankieta dobrostanu (bez user_id, data bez godziny) + spójne uzasadnienie cyklu #9,
+│                                        #   V8 users.active, evaluator_substitutions, prev_evaluation_*, mały urząd demo bez DG (Płock)
 │   └── src/test/                        # JUnit 5: rules/, pdf/, export/, auth/ (JwtAttackTest, RateLimitFilterTest), service/
-│                                        #   + it/ApiIntegrationTest, it/SecurityIntegrationTest (IDOR, eskalacja, izolacja urzędów,
+│                                        #   + it/ApiIntegrationTest, it/ProcessCompletionIntegrationTest (Etap 7: przypisywanie,
+│                                        #   powiadomienia, mały urząd, zastępstwa, kadry, korekta), it/SecurityIntegrationTest (IDOR, eskalacja, izolacja urzędów,
 │                                        #   wstrzyknięcia)
 │                                        #   (Testcontainers PostgreSQL: migracje V1–V5, walidacja JPA, scenariusze API);
 │                                        #   resources/docker-java.properties (api.version=1.44 dla Docker Engine 29+)
@@ -67,15 +72,19 @@
     ├── next.config.mjs       # rewrite: /api/* -> backend-core (wyliczany w czasie builda!); brak trasy do ai-gateway
     ├── tailwind.config.ts    # paleta `gov` (gov.pl) + tokeny `navy` przemapowane na niebieski gov.pl
     └── src/
-        ├── app/              # strony: / (pulpit + modal nowego cyklu), /cycles/[id] (6 zakładek), /hr (zaległości +
-        │                     #   eskalacja, raport CSV, kadry), /stats, /audit (dziennik, filtr AI, maskedPrompt),
+        ├── app/              # strony: / (pulpit, przypisanie oceny, zastępstwa), /cycles/[id] (6 zakładek), /hr (zaległości +
+        │                     #   eskalacja, raport CSV, edycja/usuwanie/anonimizacja, historia ocen, zastępstwa),
+        │                     #   /stats, /audit (dziennik, filtr AI, maskedPrompt),
         │                     #   /wellbeing (ankieta + klauzula RODO), /admin (wizualny kreator schematów)
         ├── components/       # Header (pasek RP, nawigacja, dzwonek powiadomień, rola demo), LoginModal (SSO AD / Węzeł
         │                     #   Krajowy — symulacja), PrivacyNotice (RODO art. 13, AI Act art. 26/50), UserProvider,
-        │                     #   RoleGate, ui.tsx (kit gov.pl), cycle/* (CriteriaTab, InterviewTab, NotesTab,
-        │                     #   EvaluationTab, ChangesTab, AckTab + ScorePicker, ProgressSteps, context.ts)
-        └── lib/              # api.ts (Bearer JWT z gov-login, fallback X-Demo-User-Id, coreAi()), types.ts (wszystkie
-                              #   kontrakty DTO), labels.ts (etykiety, dueState, MAX_CIVIL_SERVICE_GRADE), useAsync.ts
+        │                     #   AssignCycleDialog (pojedynczo z kreatorem A/B/C § 3 + podgląd terminu / grupowo),
+        │                     #   RoleGate, ui.tsx (kit gov.pl), hr/* (EmployeeEditDialog, EmployeeHistoryPanel,
+        │                     #   SubstitutionsCard), cycle/* (CriteriaTab, InterviewTab, NotesTab, EvaluationTab, ChangesTab,
+        │                     #   FormCorrectionPanel, AckTab + ScorePicker, ProgressSteps, context.ts)
+        └── lib/              # api.ts (wyłącznie Bearer JWT z gov-login, coreAi()), types.ts (wszystkie kontrakty DTO),
+                              #   labels.ts (etykiety, roleLabel/escalationLabel z DG/kierownikiem urzędu, sheetFromAnswers,
+                              #   dueState, MAX_CIVIL_SERVICE_GRADE), useAsync.ts
 ```
 
 ## Kontenery (`make up`)
@@ -107,7 +116,12 @@ Stronicowanie (opcjonalne, wstecznie zgodne): `GET /api/cycles`, `/api/hr/employ
 | GET | `/api/auth/demo-users`, `/api/auth/me` | wszyscy | logowanie demo; demo-users → `DemoUserDto` (bez e-maila i dat kadrowych) |
 | POST | `/api/auth/gov-login` | wszyscy | `{"userId"}` → `{accessToken, tokenType: "Bearer", expiresIn, identityProvider, user}` |
 | GET | `/api/cycles`, `/api/cycles/{id}` | wg roli | KPRM_ADMIN wszystko; HR/DG urząd; strony cyklu; pola `criteriaDeadline`, `mandatoryGradeEligible`, `mandatoryGradeDeadline`, `overdueDays`, `delayReason`, `signatureMethod` |
-| POST | `/api/cycles` | HR / bezpośredni przełożony | `{employeeId, sheetType?, startDate?, reevaluation?}` — **zawsze najnowsza obowiązująca wersja schematu**, termin z jej `period_months` (6 mies. przy ponownej ocenie) |
+| POST | `/api/cycles` | HR / DG / bezpośredni przełożony | `{employeeId, sheetType?, startDate?, reevaluation?, evaluatorId?, place?}` — **zawsze najnowsza obowiązująca wersja schematu**, termin z jej `period_months` (6 mies. przy ponownej ocenie); oceniający domyślnie `supervisorId`, miejscowość — miasto urzędu |
+| POST | `/api/cycles/bulk` | HR, DG | `{employeeIds?, department?, startDate?}` → `{created: [CycleDto], skipped: [{employeeId, reason}]}` (max 500; pomija osoby z aktywnym cyklem / bez przełożonego) |
+| GET | `/api/cycles/due-preview?employeeId=&startDate=&reevaluation=` | HR / DG / przełożony (urząd) | `{dueDate, criteriaDeadline, periodMonths, schemaVersion, suggestedSheet, defaultEvaluatorId, defaultPlace}` |
+| PATCH | `/api/cycles/{id}/details` | oceniający / zastępca / HR, cykl aktywny | `{place?, startDate?, dueDate?, reason?}` — zmiana okresu po potwierdzeniu kryteriów wymaga `reason` (422); audyt `CYCLE_DETAILS_UPDATED` |
+| POST | `/api/cycles/{id}/admin-correction` | HR / DG (urząd), KPRM_ADMIN | tryb korekty: `{reason (wymagane), targetStatus?, criteriaInterviewDate?, criteriaConfirmedOn?, evaluationInterviewDate?, evaluatedOn?, acknowledgedAt?, place?, startDate?, dueDate?}`; audyt `ADMIN_CORRECTION` (from/to + zmiany pól) |
+| GET | `/api/cycles/{id}/history` | jak `GET /api/cycles/{id}` | historia ocen ocenianego (`SYSTEM` / `HISTORICAL`) |
 | POST | `/api/cycles/{id}/next` | HR / oceniający | tylko z `COMPLETED`: po NEGATIVE ponowna ocena (`startDate = acknowledgedAt`, +6 mies.), po POSITIVE zwykły cykl od daty oceny; zawsze najnowszy schemat |
 | POST | `/api/cycles/{id}/criteria` | oceniający | `{"additional":[{"code":"K07"}], "interviewDate"?}` — obowiązkowe wg arkusza + 0–3 z katalogu (status DRAFT_CRITERIA) |
 | POST | `/api/cycles/{id}/confirm-criteria` | oceniany | → OBSERVATION (kryteria zablokowane) |
@@ -125,7 +139,9 @@ Stronicowanie (opcjonalne, wstecznie zgodne): `GET /api/cycles`, `/api/hr/employ
 | GET | `/api/cycles/{id}/hr-facts` | jak `GET /api/cycles/{id}`, ale **nie oceniany** (D4) | fakty z bazy dla HR Partnera: `{absenceDays, scopeChangesCount, overloadNotesCount, totalNotesCount, daysSinceLastNote, overdueDays}` |
 | GET | `/api/hr/reports/export` | HR, DG | CSV (UTF-8 z BOM, `;`) — te same agregaty co `/api/stats/summary` + eskalacja; liczności 1..k-1 jako `<k`; audyt `REPORT_EXPORTED` |
 | GET | `/api/hr/overdue` | HR, DG | aktywne cykle po terminie (bez sporządzonej oceny), malejąco wg `overdueDays`, z `escalationLevel`: 1–7 OCENIAJACY, 8–14 ZASTEPCA, 15–30 KADRY, > 30 DYREKTOR_GENERALNY |
-| GET | `/api/notifications` | zalogowany | wyliczane w locie dla widocznych cykli: `OVERDUE`, `DUE_SOON` (≤ 30 dni), `CRITERIA_DUE`, `APPEAL_DECISION_DUE`, `MANDATORY_GRADE_DUE`; `{type, severity, cycleId, dueDate, message}` |
+| GET | `/api/notifications` | zalogowany | wyliczane w locie dla widocznych cykli: `OVERDUE`, `DUE_SOON` (≤ 30 dni), `CRITERIA_DUE`, `APPEAL_DECISION_DUE`, `MANDATORY_GRADE_DUE`; oceniający/zastępca: `QUARTERLY_CHECKIN` (OBSERVATION, ≥ 90 dni bez aktywności MEDIUM, ≥ 120 HIGH), `RESCHEDULE_PENDING`; HR/DG: `GRADE_REQUEST_SUBMITTED` (30 dni od sporządzenia); oceniany i oceniający: `APPEAL_DECIDED` (30 dni); `{type, severity, cycleId, dueDate, message}` |
+| GET/POST | `/api/substitutions` | GET: HR/DG — urząd, pozostali — własne; POST: HR | `{evaluatorId, deputyId, startDate, endDate, reason}` → `SubstitutionDto` (`activeToday`) |
+| DELETE | `/api/substitutions/{id}` | HR | zakończenie (przyszłe — usunięte, trwające — koniec wczoraj) |
 | GET | `/api/admin/schemas/{id}/package` | KPRM_ADMIN | pakiet reguł `meritum-rules-<versionCode>.json` (`format`, `versionCode`, `effectiveFrom`, `periodMonths`, `config`) |
 | GET | `/api/audit-logs?limit=&page=&size=` | HR, DG (urząd), KPRM_ADMIN (wszystko) | ostatnie zdarzenia audytowe |
 | POST | `/api/wellbeing` | każdy | `{workload, energy, support (1–5), wantsConversation}` — technicznie anonimowa (bez `user_id`, data bez godziny), bez audytu, tylko agregaty |
@@ -133,6 +149,9 @@ Stronicowanie (opcjonalne, wstecznie zgodne): `GET /api/cycles`, `/api/hr/employ
 | GET | `/api/hr/employees?q=&sort=&dir=&page=&size=` | HR | lista pracowników urzędu |
 | POST | `/api/hr/absences` | HR | rejestracja nieobecności, przeliczenie `due_date` |
 | POST | `/api/hr/handover` | HR | zmiana przełożonego (§ 9 ust. 3) |
+| PATCH | `/api/hr/employees/{id}` | HR | imię, nazwisko, komórka, stanowisko, rola (bez KPRM_ADMIN), `civilServant`, stopień 1–9, rok mianowania, data stopnia, przełożony (= handover); audyt `EMPLOYEE_UPDATED` (tylko nazwy pól) |
+| DELETE | `/api/hr/employees/{id}` | HR | `{outcome: DELETED}` gdy brak śladów w procesie; inaczej `ANONYMIZED` (dane osobowe, notatki robocze i nieobecności usunięte, `active=false`, arkusze/historia/audyt zachowane); 409 przy aktywnym cyklu lub podwładnych |
+| GET/POST | `/api/hr/employees/{id}/history` | HR | historia ocen; POST `{outcome, level, evaluatedOn}` — ocena sprzed wdrożenia (`HISTORICAL`) |
 | POST | `/api/hr/import-csv` (multipart `file`) | HR | `full_name,email,role,is_civil_servant[,supervisor_email]` |
 | GET | `/api/hr/employees/{id}/gdpr-export` | HR | art. 15 RODO (cykle, notatki, nieobecności, historia ocen, audyt; ankiety są anonimowe — nie wchodzą) |
 | GET/POST | `/api/admin/schemas` | KPRM_ADMIN | wersje schematu („prawo jako kod”) |
@@ -161,6 +180,9 @@ DRAFT_CRITERIA → OBSERVATION → EVALUATION_DRAFT ⟲ → AWAITING_ACK → COM
                  OBSERVATION → DRAFT_CRITERIA (istotna zmiana zakresu obowiązków, § 9 ust. 1)
 ```
 Przejścia zdefiniowane w `CycleStatus.TRANSITIONS`; każda zmiana stanu → wpis w `audit_logs`.
+Tryb korekty (`CycleStatus.CORRECTIONS`, tylko wstecz, z uzasadnieniem): OBSERVATION → DRAFT_CRITERIA, EVALUATION_DRAFT →
+OBSERVATION, AWAITING_ACK → EVALUATION_DRAFT, COMPLETED → AWAITING_ACK | EVALUATION_DRAFT (usuwa wpis historii, unieważnia
+zapoznanie/sporządzenie); nie może otworzyć drugiego aktywnego cyklu pracownika.
 Zakończenie (zapoznanie, fikcja zapoznania, zmiana oceny przez DG) zapisuje wpis `evaluation_history` (SYSTEM); REDO go usuwa.
 
 ## Reguły prawne (`rules/`)
@@ -187,15 +209,27 @@ Zakończenie (zapoznanie, fikcja zapoznania, zmiana oceny przez DG) zapisuje wpi
 - **Obligatoryjny stopień** (art. 89 ust. 2, `GradeRules`): urzędnik SC, po ostatnim stopniu dwie kolejne oceny pozytywne na
   poziomie „powyżej” / „znacznie powyżej oczekiwań”, stopień < 9 → `mandatoryGradeEligible`.
 - Istniejące cykle zachowują `schema_version_id` (§ 13).
+- **Mały urząd bez DG** (`offices.has_dg_role = false`, `AppealAuthority`): sprzeciw rozpatruje kierownik urzędu (użytkownik z
+  rolą DG); PDF (pouczenie art. 83 ust. 1), `CycleDto.appealAuthority`, etykieta roli, drabina eskalacji > 30 dni i komunikaty
+  w UI używają nazwy organu dynamicznie.
+- **Zastępstwa**: aktywny zastępca (dziś ∈ [start, end]) widzi aktywne cykle zastępowanego, działa jak oceniający
+  (`canActAsEvaluator`), dostaje powiadomienia; jego wpisy audytu mają `substituteFor`.
+- **Przypomnienia kwartalne** (`CheckinRules`): ostatnia aktywność = max(start, potwierdzenie kryteriów, ostatnia notatka).
+- **Nieobecność a zmiana terminu**: przeliczenie z nieobecności nie cofa terminu wcześniej niż zastosowany (APPLIED) wniosek
+  z art. 81 ust. 8 — zachowywana późniejsza data, audyt `keptRescheduledDueDate`.
+- **Poprzednia ocena na arkuszu**: z historii (`SYSTEM`/`HISTORICAL`), a gdy brak — wpisana ręcznie w ocenie
+  (`previousEvaluation`, źródło `MANUAL`).
 
 ## Model danych
 `offices` (+ `city`), `users` (+ `first_name`, `last_name`, `department`, `position_title`, `appointment_year`,
 `civil_service_grade`, `last_grade_date`), `schema_versions` (`config_json` JSONB: kryteria z opisami, `mandatoryBySheet`),
 `evaluation_cycles` (+ pola procesu z V3, daty rozmów, `evaluated_on`, `place`, `appeal_decision_deadline`, `delay_reason`,
-`signature_method`),
+`signature_method`, `prev_evaluation_outcome|level|date`), `evaluator_substitutions`, `users.active`,
 `evaluation_history`, `employee_notes`, `absences`, `reschedule_requests`, `scope_changes`, `wellbeing_surveys`, `audit_logs`.
 Seed demo (V5): 16 użytkowników, 15 cykli we wszystkich statusach (w tym 2 osoby uprawnione z art. 89 ust. 2, ponowna ocena,
-sprzeciw, oczekujący wniosek o zmianę terminu), 7 ankiet dobrostanu; V6: cykle 16–17 po terminie (eskalacja). Enumy pilnowane CHECK-ami w SQL i `@Enumerated(STRING)` w JPA.
+sprzeciw, oczekujący wniosek o zmianę terminu), 7 ankiet dobrostanu; V6: cykle 16–17 po terminie (eskalacja); V8: urząd #2
+„Powiatowy Inspektorat Weterynarii w Płocku — Demo” bez DG (użytkownicy 17 kierownik urzędu/DG, 18 naczelnik, 19 specjalista;
+cykl 18 w obserwacji, ostatnia notatka 15.07.2025 → przypomnienie kwartalne). Enumy pilnowane CHECK-ami w SQL i `@Enumerated(STRING)` w JPA.
 Hibernate `ddl-auto: validate` — schemat zmienia WYŁĄCZNIE Flyway.
 
 ## Zasady pracy

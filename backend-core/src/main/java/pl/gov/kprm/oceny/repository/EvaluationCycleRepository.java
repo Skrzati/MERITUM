@@ -4,6 +4,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.domain.Pageable;
 import pl.gov.kprm.oceny.domain.EvaluationCycle;
 
+import java.util.Collection;
 import java.util.List;
 
 public interface EvaluationCycleRepository extends JpaRepository<EvaluationCycle, Long> {
@@ -12,6 +13,10 @@ public interface EvaluationCycleRepository extends JpaRepository<EvaluationCycle
     List<EvaluationCycle> findByEmployeeIdOrEvaluatorIdOrderByIdAsc(Long employeeId, Long evaluatorId, Pageable page);
 
     List<EvaluationCycle> findByEmployeeIdOrderByIdAsc(Long employeeId);
+
+    List<EvaluationCycle> findByEvaluatorIdInOrderByIdAsc(Collection<Long> evaluatorIds);
+
+    boolean existsByEmployeeIdOrEvaluatorId(Long employeeId, Long evaluatorId);
 
     List<EvaluationCycle> findByOfficeIdOrderByIdAsc(Long officeId);
 

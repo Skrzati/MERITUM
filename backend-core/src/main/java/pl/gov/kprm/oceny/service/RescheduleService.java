@@ -78,7 +78,7 @@ public class RescheduleService {
             request.setDecidedBy(user.getId());
             request.setDecidedAt(OffsetDateTime.now(clock));
             audit.log(user, cycle.getOfficeId(), "RESCHEDULE_REJECTED", AuditService.CYCLE, cycle.getId(),
-                    Map.of("requestId", requestId));
+                    workflow.auditPayload(user, cycle, Map.of("requestId", requestId)));
             return request;
         }
         requireActive(cycle);
@@ -97,8 +97,8 @@ public class RescheduleService {
         request.setNoticeText(notice(cycle, request, newDue));
         cycle.setDueDate(newDue);
         audit.log(decidedBy, cycle.getOfficeId(), "DUE_DATE_RESCHEDULED", AuditService.CYCLE, cycle.getId(),
-                Map.of("mode", request.getMode(), "statutePoint", request.getMode().statutePoint(),
-                        "from", request.getPreviousDueDate(), "to", newDue));
+                workflow.auditPayload(decidedBy, cycle, Map.of("mode", request.getMode(),
+                        "statutePoint", request.getMode().statutePoint(), "from", request.getPreviousDueDate(), "to", newDue)));
     }
 
     /** § 8: pisemne zawiadomienie ocenianego o nowym terminie; kopię dołącza się do arkusza. */

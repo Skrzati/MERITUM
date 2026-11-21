@@ -5,11 +5,17 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+import pl.gov.kprm.oceny.domain.CycleStatus;
 import pl.gov.kprm.oceny.domain.DgDecision;
 import pl.gov.kprm.oceny.domain.RescheduleMode;
+import pl.gov.kprm.oceny.domain.Role;
 import pl.gov.kprm.oceny.domain.SheetType;
 import pl.gov.kprm.oceny.domain.SignatureMethod;
+import pl.gov.kprm.oceny.rules.EvaluationOutcome;
 import pl.gov.kprm.oceny.rules.GradeRequest;
+import pl.gov.kprm.oceny.rules.PerformanceLevel;
+import pl.gov.kprm.oceny.service.CycleWorkflowService.PreviousEvaluationInput;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -21,7 +27,37 @@ public final class Requests {
 
     /** sheetType opcjonalny (domyślnie B dla kierujących, C dla pozostałych); startDate domyślnie dziś. */
     public record CreateCycleRequest(@NotNull Long employeeId, SheetType sheetType, LocalDate startDate,
-                                     boolean reevaluation) {
+                                     boolean reevaluation, Long evaluatorId, @Size(max = 100) String place) {
+    }
+
+    /** Lista pracowników albo komórka organizacyjna; arkusz domyślny per osoba (§ 3), termin z najnowszego schematu. */
+    public record BulkCreateRequest(@Size(max = 500) List<Long> employeeIds, @Size(max = 255) String department,
+                                    LocalDate startDate) {
+    }
+
+    public record CycleDetailsRequest(@Size(max = 100) String place, LocalDate startDate, LocalDate dueDate,
+                                      @Size(max = 1000) String reason) {
+    }
+
+    public record AdminCorrectionRequest(CycleStatus targetStatus, @NotBlank @Size(max = 2000) String reason,
+                                         LocalDate criteriaInterviewDate, LocalDate criteriaConfirmedOn,
+                                         LocalDate evaluationInterviewDate, LocalDate evaluatedOn,
+                                         LocalDate acknowledgedAt, @Size(max = 100) String place,
+                                         LocalDate startDate, LocalDate dueDate) {
+    }
+
+    public record UpdateEmployeeRequest(@Size(max = 100) String firstName, @Size(max = 150) String lastName,
+                                        @Size(max = 255) String department, @Size(max = 255) String positionTitle,
+                                        Role role, Boolean civilServant, Integer civilServiceGrade,
+                                        Integer appointmentYear, LocalDate lastGradeDate, Long supervisorId) {
+    }
+
+    public record HistoryRequest(@NotNull EvaluationOutcome outcome, @NotNull PerformanceLevel level,
+                                 @NotNull LocalDate evaluatedOn) {
+    }
+
+    public record SubstitutionRequest(@NotNull Long evaluatorId, @NotNull Long deputyId, @NotNull LocalDate startDate,
+                                      @NotNull LocalDate endDate, @NotBlank @Size(max = 500) String reason) {
     }
 
     /** code — kryterium z katalogu schematu; albo name — kryterium własne (o ile schemat na to pozwala). */
@@ -41,7 +77,8 @@ public final class Requests {
      */
     public record EvaluateRequest(@NotNull Map<String, Integer> scores, String justification, String iprzNotes,
                                   GradeRequest gradeRequest, LocalDate evaluationInterviewDate, boolean submit,
-                                  String delayReason, SignatureMethod signatureMethod) {
+                                  String delayReason, SignatureMethod signatureMethod,
+                                  PreviousEvaluationInput previousEvaluation) {
     }
 
     public record AcknowledgeRequest(SignatureMethod signatureMethod) {

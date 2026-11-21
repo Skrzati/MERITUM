@@ -100,7 +100,7 @@ export function AckTab({ view }: { view: CycleView }) {
             <>
               <dt className="text-slate-600">Sprzeciw złożony</dt>
               <dd>{formatDate(cycle.appealedAt)}</dd>
-              <dt className="text-slate-600">Termin decyzji DG (14 dni, art. 83 ust. 3)</dt>
+              <dt className="text-slate-600">Termin decyzji — {cycle.appealAuthority} (14 dni, art. 83 ust. 3)</dt>
               <dd>
                 {formatDate(cycle.appealDecisionDeadline)}
                 {cycle.status === "APPEALED" && cycle.appealDecisionDeadline && cycle.appealDecisionDeadline < today() && (
@@ -111,7 +111,7 @@ export function AckTab({ view }: { view: CycleView }) {
           )}
           {cycle.dgDecision && (
             <>
-              <dt className="text-slate-600">Decyzja DG</dt>
+              <dt className="text-slate-600">Decyzja ({cycle.appealAuthority})</dt>
               <dd>
                 {cycle.dgDecision === "CHANGE" ? "zmiana oceny" : "ponowne sporządzenie"} ({formatDate(cycle.dgDecidedAt)})
                 {cycle.dgComment ? ` — ${cycle.dgComment}` : ""}
@@ -142,7 +142,7 @@ export function AckTab({ view }: { view: CycleView }) {
       <div className="space-y-6">
         {cycle.status === "AWAITING_ACK" && isEmployee && (
           <Card title="Zapoznanie z oceną">
-            <p className="mb-3 text-sm text-slate-700">Po potwierdzeniu biegnie 7-dniowy termin na wniesienie sprzeciwu do DG.</p>
+            <p className="mb-3 text-sm text-slate-700">Po potwierdzeniu biegnie 7-dniowy termin na wniesienie sprzeciwu do organu: {cycle.appealAuthority.toLowerCase()}.</p>
             <fieldset className="mb-4 space-y-2">
               <legend className="mb-1 text-sm font-medium text-slate-800">Metoda podpisu</legend>
               {SIGNATURES.map((s) => (
@@ -203,7 +203,7 @@ export function AckTab({ view }: { view: CycleView }) {
         {isEmployee && appealOpen && (
           <Card title="Sprzeciw od oceny">
             <div className="space-y-3">
-              <Field label="Treść sprzeciwu" hint={`Termin: ${formatDate(cycle.appealDeadline)}`}>
+              <Field label="Treść sprzeciwu" hint={`Do: ${cycle.appealAuthority.toLowerCase()} · termin: ${formatDate(cycle.appealDeadline)}`}>
                 <textarea className={inputClass} rows={4} value={appealText} onChange={(e) => setAppealText(e.target.value)} />
               </Field>
               <Button
@@ -219,7 +219,7 @@ export function AckTab({ view }: { view: CycleView }) {
         )}
 
         {cycle.status === "APPEALED" && isOfficeDg && (
-          <Card title="Decyzja Dyrektora Generalnego">
+          <Card title={`Rozpatrzenie sprzeciwu — ${cycle.appealAuthority}`}>
             <div className="space-y-3">
               <fieldset className="flex gap-4 text-sm">
                 <legend className="sr-only">Rodzaj decyzji</legend>
@@ -238,7 +238,7 @@ export function AckTab({ view }: { view: CycleView }) {
                   </Field>
                 </>
               )}
-              <Field label="Komentarz DG">
+              <Field label={`Komentarz (${cycle.appealAuthority.toLowerCase()})`}>
                 <textarea className={inputClass} rows={2} value={dgComment} onChange={(e) => setDgComment(e.target.value)} />
               </Field>
               <Button
@@ -256,7 +256,7 @@ export function AckTab({ view }: { view: CycleView }) {
                   )
                 }
               >
-                Zatwierdź decyzję DG
+                Zatwierdź rozstrzygnięcie
               </Button>
             </div>
           </Card>
