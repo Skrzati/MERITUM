@@ -20,4 +20,4 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
 app:
-  gotenberg-url: ${GOTENBERG_URL:http://localhost:3001}
+  gotenberg-url: ${GOTENBERG_URL:http://localhost:3001/forms/chromium/convert/html}

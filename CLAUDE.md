@@ -20,15 +20,25 @@
 │       │   ├── domain/       # encje JPA + enumy (Role, SheetType, CycleStatus z mapą przejść, DgDecision)
 │       │   ├── rules/        # czysta logika prawa, bez I/O: DeadlineService, EvaluationRuleEngine, CriteriaCatalog, rekordy reguł
 │       │   ├── service/      # przypadki użycia: CycleWorkflowService, HrService, SchemaAdminService,
-│       │   │                 #   StatsService, AuditService, Access (autoryzacja)
+│       │   │                 #   StatsService, PdfExportService, AuditService, Access (autoryzacja)
+│       │   ├── pdf/          # SheetHtmlRenderer (wzór arkusza A/B/C), GotenbergClient (HTML -> PDF/A-2b)
 │       │   ├── repository/   # Spring Data JPA
 │       │   ├── auth/         # demo-login: DemoUserFilter (X-Demo-User-Id), @CurrentUser resolver
 │       │   └── api/          # kontrolery REST, Dtos, Requests, ApiExceptionHandler (RFC 7807)
 │       └── resources/
 │           ├── application.yml          # konfiguracja wyłącznie przez env (DB_URL, DB_USER, DB_PASSWORD, GOTENBERG_URL)
 │           └── db/migration/            # Flyway: V1 schemat, V2 seed demo, V3 workflow + absences, V4 korekta kryteriów v1 (§ 4)
-│   └── src/test/java/.../rules/         # JUnit 5: DeadlineServiceTest, EvaluationRuleEngineTest, CriteriaCatalogTest (czyta JSON z V4)
-├── ai-gateway/               # (etap 2+) serwis AI — na razie pusty
+│   └── src/test/java/.../               # JUnit 5: rules/ (Deadline, RuleEngine, CriteriaCatalog — czyta JSON z V4),
+│                                        #   pdf/ (SheetHtmlRenderer, GotenbergClient z MockRestServiceServer)
+├── ai-gateway/               # Python 3.11 / FastAPI — AI & Privacy Gateway (kod zgodny z 3.9+)
+│   ├── Dockerfile            # python:3.11-slim, user non-root
+│   ├── app/main.py           # endpointy + modele Pydantic
+│   ├── app/pii.py            # mask_pii / unmask_pii / PiiMasker (OSOBA, EMAIL, PESEL, KOMORKA)
+│   ├── app/llm.py            # klient OpenAI-compatible; brak klucza -> MOCK, błąd -> MOCK_FALLBACK
+│   ├── app/assistants.py     # sokratejski asystent, HR-partner (+ odpowiedzi MOCK)
+│   ├── app/consistency.py    # deterministyczne reguły spójności arkusza
+│   ├── app/guardrails.py     # brak propozycji punktów, brak treści medycznych, disclaimer AI Act
+│   └── tests/                # pytest: test_pii, test_consistency, test_api
 └── frontend/                 # (etap 2+) aplikacja webowa — na razie pusta
 ```
 
@@ -38,6 +48,7 @@
 | oceny-postgres | postgres:16-alpine | 5432 | — |
 | oceny-gotenberg | gotenberg/gotenberg:8 | 3001 | — |
 | oceny-backend-core | build `backend-core/` | 8080 | postgres (healthy), gotenberg (healthy) |
+| oceny-ai-gateway | build `ai-gateway/` | 8000 | — (env `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`) |
 
 W sieci Dockera serwisy adresują się po nazwach (`postgres:5432`, `gotenberg:3000`).
 
@@ -65,6 +76,15 @@ Błędy: 403 brak uprawnień, 404 brak zasobu, 409 niedozwolone przejście stanu
 | GET | `/api/hr/employees/{id}/gdpr-export` | HR | art. 15 RODO |
 | GET/POST | `/api/admin/schemas` | KPRM_ADMIN | wersje schematu („prawo jako kod”) |
 | GET | `/api/stats/summary` | DG, HR | tylko agregaty |
+| GET | `/api/cycles/{id}/pdf` | jak `GET /api/cycles/{id}` | PDF/A arkusza (Gotenberg); część III tylko urzędnik SC + wniosek; audyt `PDF_EXPORTED` |
+
+## API (ai-gateway, :8000)
+| Metoda | Ścieżka | Efekt |
+|---|---|---|
+| GET | `/health` | status, `llm_mode` (LIVE / MOCK) |
+| POST | `/api/ai/socratic-draft` | `masked_prompt`, `socratic_questions`, `draft_justification`, `ai_disclaimer` — nigdy nie proponuje punktów |
+| POST | `/api/ai/consistency-check` | `warnings[{code, severity, message}]`, `auto_modified: false` |
+| POST | `/api/ai/hr-partner` | `masked_prompt`, `burnout_risk_signal`, `conversation_starters`, `organizational_suggestions`, `appreciation_moment` |
 | — | `/swagger-ui.html` | | dokumentacja |
 
 ## Maszyna stanów
@@ -116,6 +136,12 @@ Hibernate `ddl-auto: validate` — schemat zmienia WYŁĄCZNIE Flyway.
 - Bez martwego kodu i zakomentowanych bloków.
 - Błędy HTTP przez `ResponseStatusException` / `@ControllerAdvice`, nie przez zwracanie `null`.
 
+### AI
+- Do LLM trafia wyłącznie tekst po `PiiMasker`; `masked_prompt` zawsze zwracany (transparentność dla użytkownika).
+- AI nie zmienia danych ani nie proponuje ocen; każda treść AI ma `ai_disclaimer` (AI Act art. 50).
+- Demo nie może zależeć od sieci: brak klucza lub błąd LLM -> odpowiedzi deterministyczne.
+- Kontrola spójności jest deterministyczna (reguły), nie LLM.
+
 ### Baza / migracje
 - Migracje są niezmienne po wypchnięciu — zmiana = nowy plik `V{n}__opis.sql`.
 - Seed demo tylko w migracjach z `seed` w nazwie.
@@ -131,4 +157,6 @@ make down      # stop
 make reset     # stop + usunięcie danych (seed wgra się ponownie)
 make logs      # logi
 make build     # mvn clean verify lokalnie
+make test      # testy backend-core
+make test-ai   # testy ai-gateway (venv w ai-gateway/.venv)
 ```

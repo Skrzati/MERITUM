@@ -2,7 +2,11 @@ package pl.gov.kprm.oceny.api;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import pl.gov.kprm.oceny.api.Dtos.CycleDto;
 import pl.gov.kprm.oceny.api.Dtos.EvaluationResponse;
@@ -14,6 +18,7 @@ import pl.gov.kprm.oceny.domain.User;
 import pl.gov.kprm.oceny.rules.Criterion;
 import pl.gov.kprm.oceny.rules.EvaluationResult;
 import pl.gov.kprm.oceny.service.CycleWorkflowService;
+import pl.gov.kprm.oceny.service.PdfExportService;
 
 import java.util.List;
 
@@ -22,6 +27,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class CycleController {
     private final CycleWorkflowService workflow;
+    private final PdfExportService pdfExport;
 
     @GetMapping
     public List<CycleDto> myCycles(@CurrentUser User user) {
@@ -86,5 +92,15 @@ public class CycleController {
         EvaluationCycle cycle = workflow.decideAppeal(id, user, req.decision(), req.comment(), req.scores(),
                 req.justification(), req.iprzNotes());
         return CycleDto.of(cycle);
+    }
+
+    @GetMapping(value = "/{id}/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+    public ResponseEntity<byte[]> pdf(@PathVariable Long id, @CurrentUser User user) {
+        byte[] pdf = pdfExport.export(id, user);
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.inline().filename("arkusz-oceny-" + id + ".pdf").build().toString())
+                .body(pdf);
     }
 }

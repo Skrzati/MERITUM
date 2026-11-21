@@ -42,7 +42,7 @@ services:
       DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
       DB_USER: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
-      GOTENBERG_URL: http://gotenberg:3000
+      GOTENBERG_URL: http://gotenberg:3000/forms/chromium/convert/html
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     depends_on:
@@ -58,7 +58,22 @@ services:
       retries: 10
     networks: [backend]
 
-  # ai-gateway i frontend zostaną dodane w kolejnych etapach.
+  ai-gateway:
+    build: ../ai-gateway
+    image: oceny/ai-gateway:latest
+    container_name: oceny-ai-gateway
+    restart: unless-stopped
+    environment:
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-SpeakLeash/bielik-11b-v2.3-instruct}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${AI_GATEWAY_PORT:-8000}:8000"
+    networks: [backend]
+
+  # frontend zostanie dodany w kolejnym etapie.
 
 volumes:
   pgdata:
