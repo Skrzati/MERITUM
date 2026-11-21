@@ -4,29 +4,34 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import { AckTab } from "@/components/cycle/AckTab";
+import { ChangesTab } from "@/components/cycle/ChangesTab";
+import type { CycleDetails, UserDetails } from "@/components/cycle/contracts";
 import type { CycleView } from "@/components/cycle/context";
 import { CriteriaTab } from "@/components/cycle/CriteriaTab";
 import { EvaluationTab } from "@/components/cycle/EvaluationTab";
+import { InterviewTab } from "@/components/cycle/InterviewTab";
 import { NotesTab } from "@/components/cycle/NotesTab";
 import { ProgressSteps } from "@/components/cycle/ProgressSteps";
 import { Badge, Card, ProblemAlert, Spinner } from "@/components/ui";
 import { useUser } from "@/components/UserProvider";
 import { api, ApiError } from "@/lib/api";
 import { formatDate, LEVEL_LABEL, OUTCOME_LABEL, STATUS_LABEL, STATUS_TONE } from "@/lib/labels";
-import type { Cycle, Note, Schema } from "@/lib/types";
+import type { Note, Schema } from "@/lib/types";
 import { useAsync } from "@/lib/useAsync";
 
 const TABS = [
-  { id: "criteria", label: "Kryteria" },
-  { id: "notes", label: "Notatki i Wirtualny HR Partner" },
-  { id: "evaluation", label: "Ocena i Sokratejskie AI" },
-  { id: "ack", label: "Zapoznanie, sprzeciw i PDF" },
+  { id: "criteria", label: "1. Kryteria" },
+  { id: "interview", label: "2. Rozmowy i IPRZ" },
+  { id: "notes", label: "3. Notatki i HR Partner" },
+  { id: "evaluation", label: "4. Ocena i Sokratejskie AI" },
+  { id: "changes", label: "5. Termin (§ 8) i Zakres (§ 9)" },
+  { id: "ack", label: "6. Zapoznanie, Podpis i PDF" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
 interface Loaded {
-  cycle: Cycle;
-  schema: Schema | null;
+  cycle: CycleDetails;
+  schema: CycleView["schema"];
   notes: Note[] | null;
   notesError: unknown;
 }
@@ -38,9 +43,9 @@ export default function CyclePage() {
 
   const state = useAsync<Loaded | null>(async () => {
     if (!current) return null;
-    const cycle = await api<Cycle>(`/api/cycles/${id}`);
+    const cycle = await api<CycleDetails>(`/api/cycles/${id}`);
     const [schema, notesResult] = await Promise.all([
-      api<Schema>(`/api/schemas/${cycle.schemaVersionId}`).catch(() => null),
+      api<Schema>(`/api/schemas/${cycle.schemaVersionId}`).then((s) => s as CycleView["schema"], () => null),
       api<Note[]>(`/api/cycles/${id}/notes`).then(
         (notes) => ({ notes, error: null as unknown }),
         (error: unknown) => ({ notes: null, error }),
@@ -69,7 +74,7 @@ export default function CyclePage() {
   const view: CycleView = {
     ...state.data,
     me: current,
-    employee: userById(cycle.employeeId),
+    employee: userById(cycle.employeeId) as UserDetails | undefined,
     isEvaluator: current.id === cycle.evaluatorId,
     isEmployee: current.id === cycle.employeeId,
     isOfficeHr: current.role === "HR" && current.officeId === cycle.officeId,
@@ -97,6 +102,8 @@ export default function CyclePage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={STATUS_TONE[cycle.status]}>{STATUS_LABEL[cycle.status]}</Badge>
+            {cycle.overdueDays > 0 && <Badge tone="red">po terminie {cycle.overdueDays} dni</Badge>}
+            {cycle.mandatoryGradeEligible && <Badge tone="green">Obligatoryjny stopień (art. 89 ust. 2)</Badge>}
             <Badge>schemat {state.data.schema?.versionCode ?? `#${cycle.schemaVersionId}`}</Badge>
             <Badge tone="blue">Twoja rola: {myRole}</Badge>
             {cycle.finalResult && (
@@ -131,8 +138,10 @@ export default function CyclePage() {
       </div>
       <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
         {tab === "criteria" && <CriteriaTab view={view} />}
+        {tab === "interview" && <InterviewTab view={view} />}
         {tab === "notes" && <NotesTab view={view} />}
-        {tab === "evaluation" && <EvaluationTab view={view} />}
+        {tab === "evaluation" && <EvaluationTab view={view} onOpenInterview={() => setTab("interview")} />}
+        {tab === "changes" && <ChangesTab view={view} />}
         {tab === "ack" && <AckTab view={view} />}
       </div>
     </div>

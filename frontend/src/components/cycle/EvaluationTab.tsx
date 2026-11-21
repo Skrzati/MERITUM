@@ -6,17 +6,21 @@ import { useUser } from "@/components/UserProvider";
 import { api } from "@/lib/api";
 import { LEVEL_LABEL, OUTCOME_LABEL, previewAverage } from "@/lib/labels";
 import type { ConsistencyResponse, EvaluationResponse, EvaluationResult, SocraticResponse } from "@/lib/types";
+import { coreAi, MAX_CIVIL_SERVICE_GRADE, type InterviewPrepResponse } from "./contracts";
 import type { CycleView } from "./context";
+import { DevelopmentCatalog, fetchInterviewPrep } from "./InterviewTab";
 import { ScorePicker } from "./ScorePicker";
 
 const EDITABLE = ["OBSERVATION", "EVALUATION_DRAFT"];
 
-export function EvaluationTab({ view }: { view: CycleView }) {
+export function EvaluationTab({ view, onOpenInterview }: { view: CycleView; onOpenInterview: () => void }) {
   const { cycle, notes, employee, isEvaluator, refresh } = view;
   const { userName } = useUser();
   const criteria = cycle.criteria ?? [];
   const editable = isEvaluator && EDITABLE.includes(cycle.status);
   const civilServant = employee?.civilServant ?? false;
+  const highestGrade = (employee?.civilServiceGrade ?? 0) >= MAX_CIVIL_SERVICE_GRADE;
+  const overdue = cycle.overdueDays > 0;
 
   const [scores, setScores] = useState<Record<string, number>>(cycle.scores ?? {});
   const [justification, setJustification] = useState(cycle.justification ?? "");
@@ -24,6 +28,9 @@ export function EvaluationTab({ view }: { view: CycleView }) {
   const [gradeRequested, setGradeRequested] = useState(cycle.gradeRequest?.requested ?? false);
   const [motivation, setMotivation] = useState(cycle.gradeRequest?.motivation ?? "");
   const [gender, setGender] = useState("");
+  const [interviewDate, setInterviewDate] = useState(cycle.evaluationInterviewDate ?? "");
+  const [delayReason, setDelayReason] = useState(cycle.delayReason ?? "");
+  const [iprzPrep, setIprzPrep] = useState<InterviewPrepResponse | null>(null);
 
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -55,7 +62,9 @@ export function EvaluationTab({ view }: { view: CycleView }) {
           scores,
           justification,
           iprzNotes: iprz,
-          gradeRequest: civilServant && gradeRequested ? { requested: true, motivation } : null,
+          gradeRequest: civilServant && !highestGrade && gradeRequested ? { requested: true, motivation } : null,
+          evaluationInterviewDate: interviewDate || null,
+          delayReason: overdue && delayReason.trim() ? delayReason : null,
           submit,
         },
       });
@@ -67,7 +76,7 @@ export function EvaluationTab({ view }: { view: CycleView }) {
   const askSocratic = () =>
     run("socratic", async () => {
       setSocratic(
-        await api<SocraticResponse>("/api/ai/socratic-draft", {
+        await api<SocraticResponse>(coreAi("socratic-draft", cycle.id), {
           body: {
             employee_name: userName(cycle.employeeId),
             sheet_type: cycle.sheetType,
@@ -81,7 +90,7 @@ export function EvaluationTab({ view }: { view: CycleView }) {
   const checkConsistency = () =>
     run("consistency", async () => {
       setConsistency(
-        await api<ConsistencyResponse>("/api/ai/consistency-check", {
+        await api<ConsistencyResponse>(coreAi("consistency-check", cycle.id), {
           body: {
             employee_name: userName(cycle.employeeId),
             employee_gender: gender || null,
@@ -90,17 +99,28 @@ export function EvaluationTab({ view }: { view: CycleView }) {
             average_score: Number(average ?? cycle.averageScore ?? 5),
             level: null,
             justification,
-            grade_request_text: civilServant && gradeRequested ? motivation : null,
+            grade_request_text: civilServant && !highestGrade && gradeRequested ? motivation : null,
           },
         }),
       );
     });
+
+  const suggestIprz = () =>
+    run("iprz", async () => setIprzPrep(await fetchInterviewPrep(view, userName(cycle.employeeId), "EVALUATION")));
+  const appendIprz = (criterion: string, actions: string[]) =>
+    setIprz((text) => `${text.trim() ? `${text.trim()}\n` : ""}${criterion}: ${actions.join("; ")}`);
 
   if (!criteria.length) return <Alert tone="amber">Najpierw należy ustalić i potwierdzić kryteria oceny.</Alert>;
 
   return (
     <div className="grid gap-6 xl:grid-cols-5">
       <div className="space-y-6 xl:col-span-3">
+        {overdue && cycle.status !== "AWAITING_ACK" && (
+          <Alert tone="amber" title={`Termin oceny minął ${cycle.overdueDays} dni temu`}>
+            Ocenę można sporządzić po terminie — nie jest to blokowane. Wskaż przyczynę opóźnienia; zostanie ona
+            zapisana w audycie i na wydruku arkusza.
+          </Alert>
+        )}
         <Card
           title="Część II — oceny cząstkowe"
           actions={
@@ -129,7 +149,21 @@ export function EvaluationTab({ view }: { view: CycleView }) {
             <Field label="Wnioski dotyczące IPRZ (obowiązkowe)">
               <textarea className={inputClass} rows={3} value={iprz} disabled={!editable} onChange={(e) => setIprz(e.target.value)} />
             </Field>
-            {civilServant ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Data rozmowy oceniającej (§ 10)">
+                <input type="date" className={inputClass} value={interviewDate} disabled={!editable} onChange={(e) => setInterviewDate(e.target.value)} />
+              </Field>
+              {overdue && (
+                <Field label="Powód opóźnienia" hint="Nie blokuje zatwierdzenia oceny.">
+                  <input className={inputClass} value={delayReason} disabled={!editable} onChange={(e) => setDelayReason(e.target.value)} />
+                </Field>
+              )}
+            </div>
+            {civilServant && highestGrade ? (
+              <Alert tone="slate" title="Część III — oceniany ma najwyższy (9.) stopień służbowy">
+                Wniosek o przyznanie kolejnego stopnia służbowego nie może zostać złożony.
+              </Alert>
+            ) : civilServant ? (
               <fieldset className="rounded-md border border-slate-200 p-3">
                 <legend className="px-1 text-sm font-medium">Część III — wniosek o kolejny stopień służbowy</legend>
                 <label className="flex items-center gap-2 text-sm">
@@ -209,6 +243,28 @@ export function EvaluationTab({ view }: { view: CycleView }) {
             </div>
           )}
         </Card>
+
+        {editable && (
+          <Card title="Podpowiedzi do IPRZ" actions={iprzPrep && <ModeBadge mode={iprzPrep.mode} />}>
+            <p className="text-sm text-slate-700">
+              Działania rozwojowe dla kryteriów z najniższymi ocenami — do wyboru i edycji.{" "}
+              <button type="button" onClick={onOpenInterview} className="font-medium text-navy-700 underline">
+                Pełne przygotowanie rozmowy oceniającej →
+              </button>
+            </p>
+            <div className="mt-3">
+              <Button variant="ai" onClick={suggestIprz} busy={busy === "iprz"}>
+                AI: Podpowiedz działania rozwojowe
+              </Button>
+            </div>
+            {iprzPrep && (
+              <div className="mt-4 space-y-3">
+                <DevelopmentCatalog entries={iprzPrep.development_catalog} actionLabel={() => "Dopisz do IPRZ"} onPick={appendIprz} />
+                <AiDisclaimer text={iprzPrep.ai_disclaimer} />
+              </div>
+            )}
+          </Card>
+        )}
 
         <Card title="Kontrola spójności">
           <Field label="Płeć ocenianego (do kontroli form gramatycznych)" hint="Nie jest zgadywana na podstawie imienia.">

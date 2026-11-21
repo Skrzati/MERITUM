@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { AiDisclaimer, Alert, Badge, Button, Card, Field, inputClass, MaskedPrompt, ModeBadge, ProblemAlert } from "@/components/ui";
+import { AiDisclaimer, Alert, Badge, Button, Card, Field, inputClass, MaskedPrompt, ModeBadge, ProblemAlert, Spinner, Stat } from "@/components/ui";
 import { useUser } from "@/components/UserProvider";
 import { api } from "@/lib/api";
 import { formatDate } from "@/lib/labels";
 import type { HrPartnerResponse, Note } from "@/lib/types";
+import { useAsync } from "@/lib/useAsync";
+import { coreAi, type HrFacts } from "./contracts";
 import type { CycleView } from "./context";
 
 const ACTIVE = ["DRAFT_CRITERIA", "CRITERIA_CONFIRMED", "OBSERVATION", "EVALUATION_DRAFT", "AWAITING_ACK"];
@@ -76,34 +78,30 @@ export function NotesTab({ view }: { view: CycleView }) {
       </div>
 
       <div className="lg:col-span-2">
-        <HrPartnerPanel notes={(notes ?? []).map((n) => n.content)} disabled={!!notesError} />
+        <HrPartnerPanel
+          cycleId={cycle.id}
+          notes={(notes ?? []).map((n) => n.content)}
+          notesCount={notes?.length ?? 0}
+          disabled={!!notesError}
+        />
       </div>
     </div>
   );
 }
 
-function HrPartnerPanel({ notes, disabled }: { notes: string[]; disabled: boolean }) {
-  const [overtime, setOvertime] = useState("22");
-  const [projects, setProjects] = useState("3");
-  const [trainings, setTrainings] = useState("1");
+function HrPartnerPanel({ cycleId, notes, notesCount, disabled }: { cycleId: number; notes: string[]; notesCount: number; disabled: boolean }) {
+  const facts = useAsync(() => api<HrFacts>(`/api/cycles/${cycleId}/hr-facts`), [cycleId, notesCount]);
   const [result, setResult] = useState<HrPartnerResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
-  const analyze = async () => {
+  const analyze = async (f: HrFacts) => {
     setBusy(true);
     setError(null);
     try {
       setResult(
-        await api<HrPartnerResponse>("/api/ai/hr-partner", {
-          body: {
-            notes,
-            workload_signals: {
-              overtime_hours: Number(overtime) || 0,
-              concurrent_projects: Number(projects) || 0,
-              missed_trainings: Number(trainings) || 0,
-            },
-          },
+        await api<HrPartnerResponse>(coreAi("hr-partner", cycleId), {
+          body: { notes, workload_signals: workloadSignals(f) },
         }),
       );
     } catch (e) {
@@ -115,22 +113,32 @@ function HrPartnerPanel({ notes, disabled }: { notes: string[]; disabled: boolea
 
   return (
     <Card title="Wirtualny HR Partner" actions={result && <ModeBadge mode={result.mode} />}>
-      <div className="grid grid-cols-3 gap-2">
-        <Field label="Nadgodziny / mies.">
-          <input type="number" min={0} className={inputClass} value={overtime} onChange={(e) => setOvertime(e.target.value)} />
-        </Field>
-        <Field label="Projekty równolegle">
-          <input type="number" min={0} className={inputClass} value={projects} onChange={(e) => setProjects(e.target.value)} />
-        </Field>
-        <Field label="Pominięte szkolenia">
-          <input type="number" min={0} className={inputClass} value={trainings} onChange={(e) => setTrainings(e.target.value)} />
-        </Field>
-      </div>
-      <div className="mt-3">
-        <Button variant="ai" onClick={analyze} busy={busy} disabled={disabled}>
-          Analizuj z Wirtualnym HR Partnerem
-        </Button>
-      </div>
+      <p className="mb-3 text-xs text-slate-600">Fakty policzone z bazy (nie szacowane przez AI) — przekazywane do analizy.</p>
+      {facts.loading && !facts.data && <Spinner label="Liczenie faktów…" />}
+      <ProblemAlert error={facts.error} />
+      {facts.data && (
+        <>
+          <div className="grid grid-cols-3 gap-2">
+            <Stat label="Dni nieobecności" value={facts.data.absenceDays} tone={facts.data.absenceDays > 0 ? "amber" : "slate"} />
+            <Stat label="Zmiany zakresu" value={facts.data.scopeChangesCount} tone={facts.data.scopeChangesCount > 0 ? "amber" : "slate"} />
+            <Stat
+              label="Notatki o przeciążeniu"
+              value={facts.data.overloadNotesCount}
+              hint={`z ${facts.data.totalNotesCount}`}
+              tone={facts.data.overloadNotesCount > 0 ? "red" : "slate"}
+            />
+          </div>
+          <p className="mt-2 text-xs text-slate-600">
+            Ostatnia notatka: {facts.data.daysSinceLastNote === null ? "brak" : `${facts.data.daysSinceLastNote} dni temu`}
+            {facts.data.overdueDays > 0 ? ` · po terminie ${facts.data.overdueDays} dni` : ""}
+          </p>
+          <div className="mt-3">
+            <Button variant="ai" onClick={() => analyze(facts.data!)} busy={busy} disabled={disabled}>
+              Analizuj z Wirtualnym HR Partnerem
+            </Button>
+          </div>
+        </>
+      )}
       <div className="mt-4 space-y-4">
         <ProblemAlert error={error} />
         {result && (
@@ -155,6 +163,18 @@ function HrPartnerPanel({ notes, disabled }: { notes: string[]; disabled: boolea
       </div>
     </Card>
   );
+}
+
+function workloadSignals(f: HrFacts): Record<string, number> {
+  const signals: Record<string, number> = {
+    absence_days: f.absenceDays,
+    scope_changes: f.scopeChangesCount,
+    overload_notes: f.overloadNotesCount,
+    total_notes: f.totalNotesCount,
+    overdue_days: f.overdueDays,
+  };
+  if (f.daysSinceLastNote !== null) signals.days_since_last_note = f.daysSinceLastNote;
+  return signals;
 }
 
 function Section({ title, items }: { title: string; items: string[] }) {

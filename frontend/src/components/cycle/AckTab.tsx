@@ -2,11 +2,30 @@
 
 import { useState } from "react";
 import { Alert, Button, Card, Field, inputClass, ProblemAlert } from "@/components/ui";
-import { download, api } from "@/lib/api";
+import { api, download, saveBlob } from "@/lib/api";
 import { formatDate, today } from "@/lib/labels";
 import type { Cycle, DgDecision } from "@/lib/types";
+import type { SignatureMethod } from "./contracts";
 import type { CycleView } from "./context";
 import { ScorePicker } from "./ScorePicker";
+
+const SIGNATURES: { method: SignatureMethod; label: string; hint: string }[] = [
+  {
+    method: "MOBYWATEL_QES",
+    label: "Podpis kwalifikowany w mObywatelu (eIDAS 2.0 — symulacja)",
+    hint: "Podpis kwalifikowany z Europejskiego Portfela Tożsamości Cyfrowej — w demo symulowany.",
+  },
+  {
+    method: "PAPER_HYBRID",
+    label: "Tryb hybrydowy — wydruk PDF/A i podpis własnoręczny",
+    hint: "Wydrukuj arkusz PDF/A, podpisz odręcznie i przekaż do kadr.",
+  },
+];
+const SIGNATURE_LABEL: Record<SignatureMethod, string> = {
+  MOBYWATEL_QES: "podpis kwalifikowany (mObywatel, symulacja)",
+  PAPER_HYBRID: "tryb hybrydowy (podpis własnoręczny)",
+  SYSTEM_DEMO: "potwierdzenie w systemie (demo)",
+};
 
 export function AckTab({ view }: { view: CycleView }) {
   const { cycle, isEmployee, isEvaluator, isOfficeHr, isOfficeDg, refresh } = view;
@@ -19,6 +38,7 @@ export function AckTab({ view }: { view: CycleView }) {
   const [dgComment, setDgComment] = useState("");
   const [dgScores, setDgScores] = useState<Record<string, number>>(cycle.scores ?? {});
   const [dgJustification, setDgJustification] = useState(cycle.justification ?? "");
+  const [signature, setSignature] = useState<SignatureMethod>("MOBYWATEL_QES");
 
   const appealOpen = cycle.status === "COMPLETED" && (!cycle.appealDeadline || cycle.appealDeadline >= today());
 
@@ -35,17 +55,23 @@ export function AckTab({ view }: { view: CycleView }) {
     }
   };
 
-  const pdf = async () => {
-    setBusy("pdf");
+  const exportFile = async (key: string, fn: () => Promise<void>) => {
+    setBusy(key);
     setError(null);
     try {
-      await download(`/api/cycles/${cycle.id}/pdf`, `arkusz-oceny-${cycle.id}.pdf`);
+      await fn();
     } catch (e) {
       setError(e);
     } finally {
       setBusy(null);
     }
   };
+  const pdf = () => exportFile("pdf", () => download(`/api/cycles/${cycle.id}/pdf`, `arkusz-oceny-${cycle.id}.pdf`));
+  const ezd = () =>
+    exportFile("ezd", async () => {
+      const pkg = await api<unknown>(`/api/cycles/${cycle.id}/ezd-package`);
+      saveBlob(new Blob([JSON.stringify(pkg, null, 2)], { type: "application/json" }), `ezd-pakiet-cykl-${cycle.id}.json`);
+    });
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
@@ -53,8 +79,16 @@ export function AckTab({ view }: { view: CycleView }) {
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
           <dt className="text-slate-600">Data zapoznania</dt>
           <dd>{formatDate(cycle.acknowledgedAt)}</dd>
+          <dt className="text-slate-600">Metoda podpisu</dt>
+          <dd>{cycle.signatureMethod ? SIGNATURE_LABEL[cycle.signatureMethod] : "—"}</dd>
           <dt className="text-slate-600">Termin na sprzeciw (7 dni)</dt>
           <dd>{formatDate(cycle.appealDeadline)}</dd>
+          {cycle.delayReason && (
+            <>
+              <dt className="text-slate-600">Przyczyna opóźnienia oceny</dt>
+              <dd>{cycle.delayReason}</dd>
+            </>
+          )}
           {cycle.refusalDate && (
             <>
               <dt className="text-slate-600">Odmowa zapoznania</dt>
@@ -67,6 +101,13 @@ export function AckTab({ view }: { view: CycleView }) {
             <>
               <dt className="text-slate-600">Sprzeciw złożony</dt>
               <dd>{formatDate(cycle.appealedAt)}</dd>
+              <dt className="text-slate-600">Termin decyzji DG (14 dni, art. 83 ust. 3)</dt>
+              <dd>
+                {formatDate(cycle.appealDecisionDeadline)}
+                {cycle.status === "APPEALED" && cycle.appealDecisionDeadline && cycle.appealDecisionDeadline < today() && (
+                  <span className="ml-2 font-semibold text-red-800">termin minął</span>
+                )}
+              </dd>
             </>
           )}
           {cycle.dgDecision && (
@@ -82,10 +123,17 @@ export function AckTab({ view }: { view: CycleView }) {
         {cycle.appealText && <p className="mt-3 rounded bg-slate-50 p-2 text-sm ring-1 ring-inset ring-slate-200">„{cycle.appealText}”</p>}
 
         <div className="mt-5 border-t border-slate-200 pt-4">
-          <Button onClick={pdf} busy={busy === "pdf"}>
-            ⬇ Pobierz PDF/A
-          </Button>
-          <p className="mt-1 text-xs text-slate-600">Arkusz wg wzoru z rozporządzenia, generowany przez Gotenberg (PDF/A-2b).</p>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={pdf} busy={busy === "pdf"}>
+              ⬇ Pobierz PDF/A (1:1 ze wzorem)
+            </Button>
+            <Button variant="secondary" onClick={ezd} busy={busy === "ezd"}>
+              Eksport pakietu pod EZD RP (JSON)
+            </Button>
+          </div>
+          <p className="mt-1 text-xs text-slate-600">
+            Arkusz wg wzoru z rozporządzenia (Gotenberg, PDF/A-2b) oraz metadane dokumentu do rejestracji w EZD RP (KRI).
+          </p>
         </div>
         <div className="mt-4">
           <ProblemAlert error={error} />
@@ -96,8 +144,36 @@ export function AckTab({ view }: { view: CycleView }) {
         {cycle.status === "AWAITING_ACK" && isEmployee && (
           <Card title="Zapoznanie z oceną">
             <p className="mb-3 text-sm text-slate-700">Po potwierdzeniu biegnie 7-dniowy termin na wniesienie sprzeciwu do DG.</p>
-            <Button onClick={() => run("ack", () => api<Cycle>(`/api/cycles/${cycle.id}/acknowledge`, { method: "POST" }))} busy={busy === "ack"}>
-              Potwierdź zapoznanie
+            <fieldset className="mb-4 space-y-2">
+              <legend className="mb-1 text-sm font-medium text-slate-800">Metoda podpisu</legend>
+              {SIGNATURES.map((s) => (
+                <label key={s.method} className="flex items-start gap-2 rounded-md border border-slate-200 p-2 text-sm hover:bg-slate-50">
+                  <input
+                    type="radio"
+                    name="signature-method"
+                    className="mt-0.5 h-4 w-4 accent-navy-700"
+                    checked={signature === s.method}
+                    onChange={() => setSignature(s.method)}
+                  />
+                  <span>
+                    <span className="font-medium">{s.label}</span>
+                    <span className="block text-xs text-slate-600">{s.hint}</span>
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+            {signature === "PAPER_HYBRID" && (
+              <div className="mb-3">
+                <Button variant="secondary" onClick={pdf} busy={busy === "pdf"}>
+                  🖨 Pobierz PDF/A do wydruku
+                </Button>
+              </div>
+            )}
+            <Button
+              onClick={() => run("ack", () => api<Cycle>(`/api/cycles/${cycle.id}/acknowledge`, { body: { signatureMethod: signature } }))}
+              busy={busy === "ack"}
+            >
+              {signature === "MOBYWATEL_QES" ? "Podpisz w mObywatelu i potwierdź zapoznanie" : "Potwierdź zapoznanie (podpis własnoręczny)"}
             </Button>
           </Card>
         )}
