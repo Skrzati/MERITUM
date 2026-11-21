@@ -18,4 +18,13 @@ class CycleStatusCorrectionTest {
         assertThat(OBSERVATION.canCorrectTo(COMPLETED)).isFalse();
         assertThat(APPEALED.canCorrectTo(EVALUATION_DRAFT)).as("sprzeciw rozstrzyga DG, nie korekta").isFalse();
     }
+
+    @Test
+    void courtAppealIsClosedStageReachableOnlyFromCompleted() {
+        assertThat(COMPLETED.canTransitionTo(APPEALED_TO_COURT)).isTrue();
+        assertThat(APPEALED_TO_COURT.canTransitionTo(COMPLETED)).isTrue();
+        assertThat(OBSERVATION.canTransitionTo(APPEALED_TO_COURT)).isFalse();
+        assertThat(APPEALED_TO_COURT.isActive()).isFalse();
+        assertThat(APPEALED_TO_COURT.canCorrectTo(EVALUATION_DRAFT)).as("spór sądowy — bez korekty").isFalse();
+    }
 }

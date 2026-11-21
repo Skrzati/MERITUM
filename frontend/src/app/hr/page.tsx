@@ -9,8 +9,10 @@ import { api, download, saveBlob } from "@/lib/api";
 import { AssignCycleDialog } from "@/components/AssignCycleDialog";
 import { EmployeeEditDialog } from "@/components/hr/EmployeeEditDialog";
 import { EmployeeHistoryPanel } from "@/components/hr/EmployeeHistoryPanel";
+import { HrAlertsCard } from "@/components/hr/HrAlertsCard";
+import { RetentionCard } from "@/components/hr/RetentionCard";
 import { SubstitutionsCard } from "@/components/hr/SubstitutionsCard";
-import { escalationLabel, formatDate, roleLabel, today, type Tone } from "@/lib/labels";
+import { EMPLOYMENT_STATUS_LABEL, escalationLabel, formatDate, roleLabel, today, type Tone } from "@/lib/labels";
 import type { Cycle, EscalationLevel, HandoverResult, ImportResult, OverdueItem, RemovalOutcome, User } from "@/lib/types";
 import { useAsync } from "@/lib/useAsync";
 
@@ -130,6 +132,9 @@ function HrPanel() {
       )}
       {assigned !== null && <Alert tone="green">Utworzono cykli oceny: {assigned}. Znajdziesz je na Pulpicie.</Alert>}
 
+      <HrAlertsCard reloadKey={current?.id} />
+      <RetentionCard />
+
       <Card title="Zaległości i drabina eskalacji">
         <p className="mb-3 text-sm text-slate-700">
           Ocena po terminie nie jest blokowana — system liczy dni opóźnienia i wskazuje szczebel eskalacji.
@@ -235,7 +240,10 @@ function HrPanel() {
                     {u.positionTitle ? <span className="block text-slate-600">{u.positionTitle}</span> : null}
                   </td>
                   <td className="py-2 pr-3">
-                    {u.civilServant ? <Badge tone="blue">urzędnik SC{u.civilServiceGrade ? ` · st. ${u.civilServiceGrade}` : ""}</Badge> : <Badge>pracownik SC</Badge>}
+                    <Badge tone={u.civilServant ? "blue" : u.employmentStatus === "PRACOWNIK_SC_NIEOKRESLONY" ? "slate" : "amber"}>
+                      {EMPLOYMENT_STATUS_LABEL[u.employmentStatus]}
+                      {u.civilServant && u.civilServiceGrade ? ` · st. ${u.civilServiceGrade}` : ""}
+                    </Badge>
                   </td>
                   <td className="py-2 text-right">
                     <div className="flex flex-wrap justify-end gap-1">
@@ -423,7 +431,7 @@ function CsvImport({ onDone }: { onDone: () => Promise<void> }) {
   return (
     <Card title="Import pracowników (CSV)">
       <div className="space-y-3">
-        <Field label="Plik CSV" hint="Kolumny: full_name,email,role,is_civil_servant[,supervisor_email]">
+        <Field label="Plik CSV" hint="Kolumny: full_name,email,role,is_civil_servant|employment_status[,supervisor_email]">
           <input type="file" accept=".csv,text/csv" className="block w-full text-sm" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         </Field>
         <Button onClick={submit} busy={busy} disabled={!file}>

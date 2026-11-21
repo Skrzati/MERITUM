@@ -73,6 +73,10 @@ public class SheetHtmlRenderer {
             """;
 
     public String render(SheetData d) {
+        return render(d, SheetParts.ALL);
+    }
+
+    public String render(SheetData d, SheetParts parts) {
         EvaluationCycle c = d.cycle();
         StringBuilder h = new StringBuilder(16384)
                 .append("<!DOCTYPE html><html lang=\"pl\"><head><meta charset=\"UTF-8\"><title>Arkusz ")
@@ -80,6 +84,10 @@ public class SheetHtmlRenderer {
                 .append("<div class=\"sheet\">ARKUSZ ").append(c.getSheetType()).append("</div>")
                 .append("<h1>OCENA OKRESOWA<br>URZĘDNIKA SŁUŻBY CYWILNEJ LUB PRACOWNIKA SŁUŻBY CYWILNEJ</h1>");
         partOne(h, d);
+        if (parts == SheetParts.PART_ONE) {
+            return h.append("<footer>Wygenerowano w systemie MERITUM · cykl #").append(c.getId())
+                    .append(" · wydruk części I (po rozmowie rozpoczynającej)</footer></body></html>").toString();
+        }
         partTwo(h, d);
         if (d.includesGradeRequest()) {
             partThree(h, d);

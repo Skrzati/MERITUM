@@ -57,7 +57,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
         this.enabled = enabled;
         this.windowSeconds = Math.max(1, windowSeconds);
         this.trustForwardedFor = trustForwardedFor;
-        this.rules = List.of(new Rule("login", "POST", "/api/auth/gov-login", loginLimit),
+        this.rules = List.of(new Rule("login", "POST", "/api/auth/", loginLimit), // gov-login i local-login
                 new Rule("ai", null, "/api/core-ai/", aiLimit));
         this.clock = clock;
     }

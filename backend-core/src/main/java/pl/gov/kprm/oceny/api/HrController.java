@@ -20,6 +20,8 @@ import pl.gov.kprm.oceny.api.Requests.HistoryRequest;
 import pl.gov.kprm.oceny.api.Requests.UpdateEmployeeRequest;
 import pl.gov.kprm.oceny.auth.CurrentUser;
 import pl.gov.kprm.oceny.domain.User;
+import pl.gov.kprm.oceny.service.HrAlertService;
+import pl.gov.kprm.oceny.service.HrAlertService.HrAlert;
 import pl.gov.kprm.oceny.service.HrService;
 import pl.gov.kprm.oceny.service.HrService.EmployeeUpdate;
 import pl.gov.kprm.oceny.service.HrService.HandoverResult;
@@ -28,6 +30,8 @@ import pl.gov.kprm.oceny.service.HrService.ImportResult;
 import pl.gov.kprm.oceny.service.OverdueService;
 import pl.gov.kprm.oceny.service.OverdueService.OverdueItem;
 import pl.gov.kprm.oceny.service.ReportExportService;
+import pl.gov.kprm.oceny.service.WorkingNotesRetentionService;
+import pl.gov.kprm.oceny.service.WorkingNotesRetentionService.PurgeResult;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -42,11 +46,25 @@ public class HrController {
     private final CycleMapper mapper;
     private final OverdueService overdue;
     private final ReportExportService reports;
+    private final HrAlertService alerts;
+    private final WorkingNotesRetentionService retention;
 
     /** Aktywne cykle po terminie (HR, DG) — malejąco wg liczby dni opóźnienia, z poziomem eskalacji. */
     @GetMapping("/overdue")
     public List<OverdueItem> overdue(@CurrentUser User user) {
         return overdue.overdue(user);
+    }
+
+    /** Alerty kadrowe z historii ocen: art. 71 ust. 1 pkt 1 (krytyczne), pracownik SC (informacyjne), art. 89 ust. 2. */
+    @GetMapping("/alerts")
+    public List<HrAlert> alerts(@CurrentUser User user) {
+        return alerts.alerts(user);
+    }
+
+    /** Czyszczenie danych pomocniczych zamkniętych cykli urzędu (notatki robocze, ankiety); arkusze pozostają. */
+    @PostMapping("/retention/purge-working-notes")
+    public PurgeResult purgeWorkingNotes(@CurrentUser User user) {
+        return retention.purgeForOffice(user);
     }
 
     @GetMapping("/employees")
@@ -69,8 +87,8 @@ public class HrController {
     public UserDto updateEmployee(@CurrentUser User user, @PathVariable Long id,
                                   @Valid @RequestBody UpdateEmployeeRequest req) {
         return UserDto.of(hr.updateEmployee(user, id, new EmployeeUpdate(req.firstName(), req.lastName(), req.department(),
-                req.positionTitle(), req.role(), req.civilServant(), req.civilServiceGrade(), req.appointmentYear(),
-                req.lastGradeDate(), req.supervisorId())));
+                req.positionTitle(), req.role(), req.civilServant(), req.employmentStatus(), req.civilServiceGrade(), req.appointmentYear(),
+                req.lastGradeDate(), req.supervisorId(), req.jobDescription(), req.employmentStartDate())));
     }
 
     /** Usunięcie danych pracownika: DELETED (brak śladów w procesie) albo ANONYMIZED (cykle/historia/audyt zachowane). */

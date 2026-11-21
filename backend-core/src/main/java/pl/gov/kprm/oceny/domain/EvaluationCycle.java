@@ -76,6 +76,13 @@ public class EvaluationCycle {
     private Long iprzApprovedBy;
     private OffsetDateTime iprzApprovedAt;
     private OffsetDateTime iprzEmployeeAckAt;
+    /** Spór sądowy (art. 83 ust. 5) — arkusz i dokumentacja cyklu nie podlegają czyszczeniu ani brakowaniu. */
+    private boolean legalHold;
+    private LocalDate courtAppealFiledOn;
+    private String courtCaseReference;
+    private int appealRound;
+    /** Dane pomocnicze (notatki robocze, ankiety) usunięte po zamknięciu cyklu; arkusz pozostaje w części B akt. */
+    private OffsetDateTime workingNotesPurgedAt;
 
     public enum IprzStatus { DRAFT, PROPOSED, APPROVED }
 }

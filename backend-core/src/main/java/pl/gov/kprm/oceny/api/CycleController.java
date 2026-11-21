@@ -14,6 +14,7 @@ import pl.gov.kprm.oceny.rules.EvaluationResult;
 import pl.gov.kprm.oceny.service.CycleWorkflowService;
 import pl.gov.kprm.oceny.service.CycleWorkflowService.BulkResult;
 import pl.gov.kprm.oceny.service.CycleWorkflowService.CorrectionFields;
+import pl.gov.kprm.oceny.pdf.SheetParts;
 import pl.gov.kprm.oceny.service.CycleWorkflowService.DuePreview;
 import pl.gov.kprm.oceny.service.CycleWorkflowService.HrFacts;
 import pl.gov.kprm.oceny.domain.IprzItem;
@@ -215,6 +216,19 @@ public class CycleController {
                 req.justification(), req.iprzNotes()));
     }
 
+    /** Art. 83 ust. 5 — odwołanie do sądu pracy (kadry / kierownictwo); ustawia legal hold. */
+    @PostMapping("/{id}/court-appeal")
+    public CycleDto courtAppeal(@PathVariable Long id, @CurrentUser User user,
+                                @Valid @RequestBody CourtAppealRequest req) {
+        return mapper.toDto(workflow.registerCourtAppeal(id, user, req.filedOn(), req.caseReference()));
+    }
+
+    @PostMapping("/{id}/court-appeal/close")
+    public CycleDto closeCourtAppeal(@PathVariable Long id, @CurrentUser User user,
+                                     @Valid @RequestBody CourtAppealCloseRequest req) {
+        return mapper.toDto(workflow.closeCourtAppeal(id, user, req.outcome()));
+    }
+
     @GetMapping("/{id}/reschedule")
     public List<RescheduleDto> reschedules(@PathVariable Long id, @CurrentUser User user) {
         return reschedules.list(id, user).stream().map(RescheduleDto::of).toList();
@@ -247,13 +261,17 @@ public class CycleController {
                 req.description(), req.significant()));
     }
 
+    /** {@code parts=1} — wyłącznie część I (kryteria i podpisy po rozmowie rozpoczynającej); domyślnie cały arkusz. */
     @GetMapping(value = "/{id}/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
-    public ResponseEntity<byte[]> pdf(@PathVariable Long id, @CurrentUser User user) {
-        byte[] pdf = pdfExport.export(id, user);
+    public ResponseEntity<byte[]> pdf(@PathVariable Long id, @CurrentUser User user,
+                                      @RequestParam(required = false) String parts) {
+        SheetParts scope = SheetParts.parse(parts);
+        byte[] pdf = pdfExport.export(id, user, scope);
+        String name = scope == SheetParts.PART_ONE ? "arkusz-oceny-" + id + "-czesc-I.pdf" : "arkusz-oceny-" + id + ".pdf";
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_PDF)
                 .header(HttpHeaders.CONTENT_DISPOSITION,
-                        ContentDisposition.inline().filename("arkusz-oceny-" + id + ".pdf").build().toString())
+                        ContentDisposition.inline().filename(name).build().toString())
                 .body(pdf);
     }
 

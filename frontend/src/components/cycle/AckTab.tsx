@@ -39,7 +39,12 @@ export function AckTab({ view }: { view: CycleView }) {
   const [dgJustification, setDgJustification] = useState(cycle.justification ?? "");
   const [signature, setSignature] = useState<SignatureMethod>("MOBYWATEL_QES");
 
-  const appealOpen = cycle.status === "COMPLETED" && (!cycle.appealDeadline || cycle.appealDeadline >= today());
+  const [courtFiledOn, setCourtFiledOn] = useState(today());
+  const [courtCase, setCourtCase] = useState("");
+  const [courtOutcome, setCourtOutcome] = useState("");
+
+  const appealOpen = cycle.appealAllowed && (!cycle.appealDeadline || cycle.appealDeadline >= today());
+  const officeManagement = isOfficeHr || isOfficeDg;
 
   const run = async (key: string, fn: () => Promise<unknown>) => {
     setBusy(key);
@@ -66,6 +71,8 @@ export function AckTab({ view }: { view: CycleView }) {
     }
   };
   const pdf = () => exportFile("pdf", () => download(`/api/cycles/${cycle.id}/pdf`, `arkusz-oceny-${cycle.id}.pdf`));
+  const pdfPartOne = () =>
+    exportFile("pdf1", () => download(`/api/cycles/${cycle.id}/pdf?parts=1`, `arkusz-oceny-${cycle.id}-czesc-I.pdf`));
   const ezd = () =>
     exportFile("ezd", async () => {
       const pkg = await api<unknown>(`/api/cycles/${cycle.id}/ezd-package`);
@@ -125,6 +132,9 @@ export function AckTab({ view }: { view: CycleView }) {
           <div className="flex flex-wrap gap-2">
             <Button onClick={pdf} busy={busy === "pdf"}>
               ⬇ Pobierz PDF/A (1:1 ze wzorem)
+            </Button>
+            <Button variant="secondary" onClick={pdfPartOne} busy={busy === "pdf1"}>
+              Drukuj tylko Część I
             </Button>
             <Button variant="secondary" onClick={ezd} busy={busy === "ezd"}>
               Eksport pakietu pod EZD RP (JSON)
@@ -208,8 +218,11 @@ export function AckTab({ view }: { view: CycleView }) {
         )}
 
         {isEmployee && appealOpen && (
-          <Card title="Sprzeciw od oceny">
+          <Card title={cycle.appealRound > 0 ? "Ponowny sprzeciw od oceny sporządzonej po raz drugi" : "Sprzeciw od oceny"}>
             <div className="space-y-3">
+              {cycle.appealRound > 0 && (
+                <Alert tone="blue">Ocenę sporządzono ponownie po uwzględnieniu sprzeciwu — przysługuje ponowny sprzeciw (art. 83 ust. 4).</Alert>
+              )}
               <Field label="Treść sprzeciwu" hint={`Do: ${cycle.appealAuthority.toLowerCase()} · termin: ${formatDate(cycle.appealDeadline)}`}>
                 <textarea className={inputClass} rows={4} value={appealText} onChange={(e) => setAppealText(e.target.value)} />
               </Field>
@@ -269,7 +282,59 @@ export function AckTab({ view }: { view: CycleView }) {
           </Card>
         )}
 
-        {cycle.status === "COMPLETED" && !appealOpen && <Alert tone="slate">Termin na sprzeciw upłynął — ocena jest ostateczna.</Alert>}
+        {cycle.status === "COMPLETED" && !cycle.appealAllowed && (
+          <Alert tone="slate">Ocena zmieniona w trybie sprzeciwu — przysługuje odwołanie do sądu pracy (art. 83 ust. 5).</Alert>
+        )}
+        {cycle.status === "COMPLETED" && cycle.appealAllowed && !appealOpen && (
+          <Alert tone="slate">Termin na sprzeciw upłynął — ocena jest ostateczna.</Alert>
+        )}
+
+        {cycle.legalHold && (
+          <Alert tone="red" title="Legal hold — spór przed sądem pracy">
+            Odwołanie wniesione {formatDate(cycle.courtAppealFiledOn)}
+            {cycle.courtCaseReference ? ` (sygn. ${cycle.courtCaseReference})` : ""}. Arkusz i dokumentacja cyklu nie podlegają czyszczeniu ani
+            brakowaniu do prawomocnego zakończenia sporu.
+          </Alert>
+        )}
+
+        {officeManagement && cycle.status === "COMPLETED" && (
+          <Card title="Odwołanie do sądu pracy (art. 83 ust. 5)">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Data wniesienia odwołania">
+                <input type="date" className={inputClass} max={today()} value={courtFiledOn} onChange={(e) => setCourtFiledOn(e.target.value)} />
+              </Field>
+              <Field label="Sygnatura akt (opcjonalnie)">
+                <input className={inputClass} value={courtCase} maxLength={100} onChange={(e) => setCourtCase(e.target.value)} />
+              </Field>
+            </div>
+            <Button
+              variant="danger"
+              busy={busy === "court"}
+              onClick={() =>
+                run("court", () =>
+                  api<Cycle>(`/api/cycles/${cycle.id}/court-appeal`, { body: { filedOn: courtFiledOn, caseReference: courtCase || null } }),
+                )
+              }
+            >
+              Zarejestruj odwołanie (legal hold)
+            </Button>
+          </Card>
+        )}
+
+        {officeManagement && cycle.status === "APPEALED_TO_COURT" && (
+          <Card title="Zakończenie sporu sądowego">
+            <Field label="Rozstrzygnięcie (sygnatura, treść wyroku)">
+              <textarea className={inputClass} rows={2} value={courtOutcome} onChange={(e) => setCourtOutcome(e.target.value)} />
+            </Field>
+            <Button
+              disabled={!courtOutcome.trim()}
+              busy={busy === "court-close"}
+              onClick={() => run("court-close", () => api<Cycle>(`/api/cycles/${cycle.id}/court-appeal/close`, { body: { outcome: courtOutcome } }))}
+            >
+              Zarejestruj prawomocne zakończenie (zdejmij legal hold)
+            </Button>
+          </Card>
+        )}
       </div>
     </div>
   );

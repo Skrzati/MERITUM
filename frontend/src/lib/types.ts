@@ -9,7 +9,8 @@ export type CycleStatus =
   | "EVALUATION_DRAFT"
   | "AWAITING_ACK"
   | "COMPLETED"
-  | "APPEALED";
+  | "APPEALED"
+  | "APPEALED_TO_COURT";
 export type PerformanceLevel = "SIGNIFICANTLY_BELOW" | "BELOW" | "MEETS" | "ABOVE" | "SIGNIFICANTLY_ABOVE";
 export type Outcome = "POSITIVE" | "NEGATIVE";
 export type DgDecision = "CHANGE" | "REDO";
@@ -21,6 +22,8 @@ export type InterviewStage = "INITIAL" | "EVALUATION" | "FEEDBACK";
 export type IprzStatus = "DRAFT" | "PROPOSED" | "APPROVED";
 export type IprzFormType = "SZKOLENIE" | "MENTORING" | "SAMOKSZTALCENIE" | "PROJEKT" | "INNE";
 export type IprzItemStatus = "PLANNED" | "IN_PROGRESS" | "DONE";
+/** Status zatrudnienia w SC — PRACOWNIK_SC_OKRESLONY i WYZSZE_STANOWISKO_SC nie podlegają ocenie okresowej. */
+export type EmploymentStatus = "URZEDNIK_SC" | "PRACOWNIK_SC_NIEOKRESLONY" | "PRACOWNIK_SC_OKRESLONY" | "WYZSZE_STANOWISKO_SC";
 export type EscalationLevel = "OCENIAJACY" | "ZASTEPCA" | "KADRY" | "DYREKTOR_GENERALNY";
 
 export interface User {
@@ -30,7 +33,9 @@ export interface User {
   /** Brak w /api/auth/demo-users (endpoint publiczny) — tylko w danych kadrowych. */
   email?: string;
   role: Role;
+  /** Pochodna statusu: true wyłącznie dla URZEDNIK_SC (stopnie służbowe, art. 89). */
   civilServant: boolean;
+  employmentStatus: EmploymentStatus;
   supervisorId: number | null;
   firstName?: string | null;
   lastName?: string | null;
@@ -45,6 +50,10 @@ export interface User {
   officeHasDgRole?: boolean;
   /** Z danych kadrowych: false = konto zanonimizowane. */
   active?: boolean;
+  /** Opis stanowiska pracy (art. 84) — backend przekazuje go do podpowiedzi kryteriów AI. */
+  jobDescription?: string | null;
+  /** Data nawiązania stosunku pracy — retencja akt: po 31.12.2018 10 lat, wcześniej / brak daty 50 lat. */
+  employmentStartDate?: string | null;
 }
 
 export type HistorySourceType = "SYSTEM" | "HISTORICAL" | "MANUAL";
@@ -86,6 +95,9 @@ export interface DuePreview {
   suggestedSheet: SheetType;
   defaultEvaluatorId: number | null;
   defaultPlace: string | null;
+  employmentStatus: EmploymentStatus;
+  /** ≠ null — pracownik nie podlega ocenie okresowej (art. 37–38 / wyższe stanowisko SC). */
+  blockedReason: string | null;
 }
 
 export interface BulkCreateResult {
@@ -163,6 +175,16 @@ export interface Cycle {
   iprzApprovedBy: number | null;
   iprzApprovedAt: string | null;
   iprzEmployeeAckAt: string | null;
+  /** Art. 83 ust. 5 — spór sądowy: arkusz nie podlega czyszczeniu ani brakowaniu. */
+  legalHold: boolean;
+  courtAppealFiledOn: string | null;
+  courtCaseReference: string | null;
+  /** Liczba rozstrzygnięć sprzeciwu (po REDO przysługuje ponowny sprzeciw — art. 83 ust. 4). */
+  appealRound: number;
+  /** false po zmianie oceny przez organ — pozostaje odwołanie do sądu pracy. */
+  appealAllowed: boolean;
+  /** Dane pomocnicze (notatki robocze, ankiety) usunięte po zamknięciu cyklu — arkusz pozostaje w części B akt. */
+  workingNotesPurgedAt: string | null;
 }
 
 export interface SelfPrep {
@@ -269,11 +291,67 @@ export interface NotificationItem {
     | "QUARTERLY_CHECKIN"
     | "GRADE_REQUEST_SUBMITTED"
     | "RESCHEDULE_PENDING"
-    | "APPEAL_DECIDED";
+    | "APPEAL_DECIDED"
+    | "HR_CRITICAL_ALERT"
+    | "HR_INFO_ALERT"
+    | "PRE_INTERVIEW_SURVEY_SENT";
   severity: "HIGH" | "MEDIUM" | "LOW";
-  cycleId: number;
+  cycleId: number | null;
   dueDate: string | null;
   message: string;
+}
+
+/** Konto w /admin (tryb Mały Urząd) — backend nie zwraca skrótu hasła. */
+export interface Account {
+  user: User;
+  hasLocalPassword: boolean;
+  passwordChangedAt: string | null;
+}
+
+export interface Office {
+  id: number;
+  name: string;
+  city: string | null;
+  hasDgRole: boolean;
+  localAuthEnabled: boolean;
+}
+
+/** Ankieta przygotowawcza przed rozmową (PreInterviewSurveyService.SurveyView) — niezależna od ankiety dobrostanu. */
+export interface SurveyQuestion {
+  id: string;
+  text: string;
+  custom: boolean;
+  addedBy: number | null;
+  answer: string | null;
+}
+
+export interface PreInterviewSurvey {
+  cycleId: number;
+  status: "DRAFT" | "SENT";
+  sentAt: string | null;
+  allowCustom: boolean;
+  /** false — przełożony przed wysłaniem albo kadry: odpowiedzi ukryte. */
+  answersVisible: boolean;
+  questions: SurveyQuestion[];
+}
+
+export interface PurgeResult {
+  cyclesPurged: number;
+  notesDeleted: number;
+  surveysDeleted: number;
+  skippedLegalHold: number;
+}
+
+export interface HrAlert {
+  employeeId: number;
+  employeeName: string;
+  employmentStatus: EmploymentStatus;
+  cycleId: number | null;
+  type: "TWO_NEGATIVE_TERMINATION" | "TWO_NEGATIVE_INFO" | "MANDATORY_GRADE";
+  severity: "CRITICAL" | "INFO";
+  legalBasis: string;
+  message: string;
+  since: string;
 }
 
 export interface OverdueItem {

@@ -37,6 +37,14 @@ export function NotesTab({ view }: { view: CycleView }) {
     <div className="grid gap-6 lg:grid-cols-5">
       <div className="space-y-6 lg:col-span-3">
         <Card title="Oś czasu notatek">
+          {cycle.workingNotesPurgedAt && (
+            <div className="mb-3">
+              <Alert tone="slate">
+                Notatki robocze usunięto {formatDate(cycle.workingNotesPurgedAt.slice(0, 10))} po zamknięciu cyklu (dane pomocnicze — RODO).
+                Arkusz oceny pozostaje w części B akt osobowych.
+              </Alert>
+            </div>
+          )}
           {notesError ? (
             <Alert tone="amber">Notatki widzi wyłącznie oceniający i oceniany.</Alert>
           ) : notes?.length ? (

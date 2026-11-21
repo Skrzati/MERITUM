@@ -16,6 +16,14 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  mail:
+    # SMTP — w demo Mailpit (infra/docker-compose.yml); wysyłka tylko przy MAIL_ENABLED=true
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    properties:
+      mail.smtp.connectiontimeout: 3000
+      mail.smtp.timeout: 3000
+      mail.smtp.writetimeout: 3000
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
@@ -29,6 +37,16 @@ app:
   auth:
     # nagłówek X-Demo-User-Id (testy/Swagger); w produkcji wyłączyć
     demo-header-enabled: ${DEMO_HEADER_ENABLED:true}
+    # koszt BCrypt dla kont lokalnych (tryb Mały Urząd)
+    bcrypt-strength: ${BCRYPT_STRENGTH:12}
+  retention:
+    # dane pomocnicze (notatki robocze, ankiety) czyszczone po zamknięciu cyklu + karencja; arkusze — część B akt
+    purge-enabled: ${RETENTION_PURGE_ENABLED:false}
+    purge-cron: ${RETENTION_PURGE_CRON:0 30 2 * * *}
+    working-notes-grace-days: ${RETENTION_GRACE_DAYS:30}
+  mail:
+    enabled: ${MAIL_ENABLED:false}
+    from: ${MAIL_FROM:meritum@kprm-demo.gov.pl}
   stats:
     k-anonymity: ${STATS_K_ANONYMITY:5}
   cors:

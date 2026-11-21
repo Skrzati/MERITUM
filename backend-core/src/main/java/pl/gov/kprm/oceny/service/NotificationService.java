@@ -7,10 +7,12 @@ import pl.gov.kprm.oceny.domain.*;
 import pl.gov.kprm.oceny.repository.EmployeeNoteRepository;
 import pl.gov.kprm.oceny.repository.FeedbackCheckinRepository;
 import pl.gov.kprm.oceny.repository.OfficeRepository;
+import pl.gov.kprm.oceny.repository.PreInterviewSurveyRepository;
 import pl.gov.kprm.oceny.repository.RescheduleRequestRepository;
 import pl.gov.kprm.oceny.repository.UserRepository;
 import pl.gov.kprm.oceny.rules.AppealAuthority;
 import pl.gov.kprm.oceny.rules.CheckinRules;
+import pl.gov.kprm.oceny.rules.EmploymentAlertRules;
 import pl.gov.kprm.oceny.rules.OverdueRules;
 import pl.gov.kprm.oceny.service.EvaluationHistoryService.CycleHistory;
 
@@ -35,7 +37,7 @@ public class NotificationService {
     static final int INFO_VISIBLE_DAYS = 30;
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy");
     private static final Set<CycleStatus> EVALUATED = EnumSet.of(CycleStatus.AWAITING_ACK, CycleStatus.COMPLETED,
-            CycleStatus.APPEALED);
+            CycleStatus.APPEALED, CycleStatus.APPEALED_TO_COURT);
 
     private final CycleWorkflowService workflow;
     private final EvaluationHistoryService history;
@@ -45,11 +47,17 @@ public class NotificationService {
     private final RescheduleRequestRepository reschedules;
     private final OfficeRepository offices;
     private final FeedbackCheckinRepository checkins;
+    private final HrAlertService hrAlerts;
+    private final PreInterviewSurveyRepository surveys;
     private final Clock clock;
 
     public enum Type {
         OVERDUE, DUE_SOON, CRITERIA_DUE, APPEAL_DECISION_DUE, MANDATORY_GRADE_DUE,
-        QUARTERLY_CHECKIN, GRADE_REQUEST_SUBMITTED, RESCHEDULE_PENDING, APPEAL_DECIDED
+        QUARTERLY_CHECKIN, GRADE_REQUEST_SUBMITTED, RESCHEDULE_PENDING, APPEAL_DECIDED,
+        /** Kadry / kierownictwo: art. 71 ust. 1 pkt 1 (krytyczny) albo informacja o dwóch ocenach negatywnych. */
+        HR_CRITICAL_ALERT, HR_INFO_ALERT,
+        /** Oceniający: oceniany wysłał ankietę przygotowawczą przed rozmową. */
+        PRE_INTERVIEW_SURVEY_SENT
     }
 
     public enum Severity { HIGH, MEDIUM, LOW }
@@ -61,11 +69,14 @@ public class NotificationService {
     public List<Notification> forUser(User user) {
         LocalDate today = LocalDate.now(clock);
         List<EvaluationCycle> visible = workflow.visibleFor(user);
+        List<Notification> result = new ArrayList<>();
+        if (user.getRole() == Role.HR || user.getRole() == Role.DG) {
+            employmentAlerts(user, result);
+        }
         if (visible.isEmpty()) {
-            return List.of();
+            return result;
         }
         Context ctx = context(user, visible);
-        List<Notification> result = new ArrayList<>();
         for (EvaluationCycle c : visible) {
             String who = ctx.names.getOrDefault(c.getEmployeeId(), "#" + c.getEmployeeId());
             boolean asEvaluator = c.getEvaluatorId().equals(user.getId())
@@ -85,10 +96,23 @@ public class NotificationService {
         return result;
     }
 
+    /** Art. 89 ust. 2 ma osobne powiadomienie per cykl (MANDATORY_GRADE_DUE) — tu tylko skutki ocen negatywnych. */
+    private void employmentAlerts(User user, List<Notification> out) {
+        for (HrAlertService.HrAlert a : hrAlerts.forOffice(user.getOfficeId())) {
+            if (a.type() == EmploymentAlertRules.Type.MANDATORY_GRADE) {
+                continue;
+            }
+            boolean critical = a.severity() == EmploymentAlertRules.Severity.CRITICAL;
+            out.add(new Notification(critical ? Type.HR_CRITICAL_ALERT : Type.HR_INFO_ALERT,
+                    critical ? Severity.HIGH : Severity.LOW, a.cycleId(), a.since(),
+                    a.employeeName() + ": " + a.message() + " (" + a.legalBasis() + ")"));
+        }
+    }
+
     private record Context(Map<Long, String> names, Map<Long, CycleHistory> histories, Map<Long, LocalDate> lastNote,
                            Map<Long, LocalDate> lastCheckin,
                            Set<Long> pendingReschedule, Map<Long, Boolean> officeHasDg, Set<Long> substituted,
-                           boolean officeStaff) {
+                           boolean officeStaff, Map<Long, LocalDate> surveySent) {
     }
 
     private Context context(User user, List<EvaluationCycle> visible) {
@@ -103,9 +127,12 @@ public class NotificationService {
                 .map(RescheduleRequest::getCycleId).collect(Collectors.toSet());
         Map<Long, Boolean> hasDg = offices.findAllById(visible.stream().map(EvaluationCycle::getOfficeId).collect(Collectors.toSet()))
                 .stream().collect(Collectors.toMap(Office::getId, Office::isHasDgRole));
+        Map<Long, LocalDate> surveySent = new HashMap<>();
+        surveys.findByCycleIdInAndStatus(ids, PreInterviewSurvey.Status.SENT).forEach(s -> surveySent.put(s.getCycleId(),
+                s.getSentAt().atZoneSameInstant(clock.getZone()).toLocalDate()));
         return new Context(UserNames.byId(users, visible.stream().map(EvaluationCycle::getEmployeeId).toList()),
                 history.forCycles(visible), lastNote, lastCheckin, pending, hasDg, substitutions.substitutedBy(user.getId()),
-                user.getRole() == Role.HR || user.getRole() == Role.DG);
+                user.getRole() == Role.HR || user.getRole() == Role.DG, surveySent);
     }
 
     private void deadlines(EvaluationCycle c, String who, LocalDate today, Context ctx, List<Notification> out) {
@@ -153,6 +180,11 @@ public class NotificationService {
                         "Kwartalne podsumowanie: od " + days + " dni brak notatki z obserwacji pracy " + who
                                 + " — zapisz krótką notatkę lub przeprowadź rozmowę informacyjną"));
             }
+        }
+        LocalDate sent = ctx.surveySent.get(c.getId());
+        if (sent != null && c.getStatus().isActive() && !sent.isBefore(today.minusDays(INFO_VISIBLE_DAYS))) {
+            out.add(new Notification(Type.PRE_INTERVIEW_SURVEY_SENT, Severity.MEDIUM, c.getId(), sent,
+                    who + " wysłał(a) ankietę przygotowawczą przed rozmową — odpowiedzi w zakładce „Rozmowy i IPRZ”"));
         }
         if (ctx.pendingReschedule.contains(c.getId())) {
             out.add(new Notification(Type.RESCHEDULE_PENDING, Severity.HIGH, c.getId(), null,

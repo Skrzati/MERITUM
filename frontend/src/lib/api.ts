@@ -47,7 +47,7 @@ export function identityProviderLabel(): string | null {
   return read(IDP_STORAGE_KEY);
 }
 
-/** Wyłącznie Bearer JWT z gov-login — bez cichego przejścia na nagłówek demo. */
+/** Wyłącznie Bearer JWT z gov-login / local-login — bez cichego przejścia na nagłówek demo. */
 function headers(extra?: HeadersInit): Headers {
   const h = new Headers(extra);
   const token = accessToken();
@@ -105,7 +105,22 @@ export async function govLogin(userId: number, providerLabel?: string): Promise<
     cache: "no-store",
   });
   if (!res.ok) throw await toError(res);
-  const login = (await res.json()) as LoginResponse;
+  return storeSession((await res.json()) as LoginResponse, providerLabel);
+}
+
+/** Konto lokalne urzędu (tryb Mały Urząd): login + hasło weryfikowane w backendzie (BCrypt), odpowiedź jak gov-login. */
+export async function localLogin(login: string, password: string, providerLabel?: string): Promise<LoginResponse> {
+  const res = await fetch("/api/auth/local-login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ login, password }),
+    cache: "no-store",
+  });
+  if (!res.ok) throw await toError(res);
+  return storeSession((await res.json()) as LoginResponse, providerLabel);
+}
+
+function storeSession(login: LoginResponse, providerLabel?: string): LoginResponse {
   write(TOKEN_STORAGE_KEY, login.accessToken);
   write(USER_STORAGE_KEY, String(login.user.id));
   write(IDP_STORAGE_KEY, providerLabel ?? login.identityProvider);

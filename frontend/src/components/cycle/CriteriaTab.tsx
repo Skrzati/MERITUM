@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { AiDisclaimer, Alert, Badge, Button, Card, Field, inputClass, MaskedPrompt, ModeBadge, ProblemAlert } from "@/components/ui";
-import { api, coreAi } from "@/lib/api";
+import { api, coreAi, download } from "@/lib/api";
 import { formatDate } from "@/lib/labels";
 import type { CatalogCriterion, Cycle, SuggestCriteriaResponse } from "@/lib/types";
 import type { CycleView } from "./context";
@@ -114,6 +114,19 @@ export function CriteriaTab({ view }: { view: CycleView }) {
           {cycle.status !== "DRAFT_CRITERIA" && cycle.criteria?.length ? (
             <p className="mt-4 text-sm text-slate-700">🔒 Kryteria zostały potwierdzone i są zablokowane do końca cyklu.</p>
           ) : null}
+          {cycle.criteria?.length ? (
+            <div className="mt-4">
+              <Button
+                variant="secondary"
+                busy={busy === "pdf1"}
+                onClick={() =>
+                  run("pdf1", () => download(`/api/cycles/${cycle.id}/pdf?parts=1`, `arkusz-oceny-${cycle.id}-czesc-I.pdf`), false)
+                }
+              >
+                Drukuj Część I arkusza (kryteria i podpisy)
+              </Button>
+            </div>
+          ) : null}
 
           {isEmployee && cycle.status === "DRAFT_CRITERIA" && (
             <div className="mt-4 space-y-2">
@@ -134,7 +147,8 @@ export function CriteriaTab({ view }: { view: CycleView }) {
             <p className="mb-3 text-sm text-slate-700">
               Stanowisko: <strong>{employee?.positionTitle ?? "—"}</strong>
               {employee?.department ? ` · ${employee.department}` : ""}. Asystent proponuje wyłącznie kryteria z katalogu
-              (zał. nr 1), spoza obowiązkowych — decyzja należy do oceniającego.
+              (zał. nr 1), spoza obowiązkowych — decyzja należy do oceniającego. Backend dołącza opis stanowiska pracy z profilu
+              pracownika (art. 84), prowadzonego przez kadry.
             </p>
             <Field label="Zakres obowiązków (opcjonalnie)" hint="Dane osobowe są maskowane przed wysłaniem do modelu.">
               <textarea className={inputClass} rows={3} value={responsibilities} onChange={(e) => setResponsibilities(e.target.value)} />

@@ -8,6 +8,7 @@ import {
   currentUserId,
   errorMessage,
   govLogin,
+  localLogin,
   identityProviderLabel,
   logout as clearLogin,
   wasLoggedOut,
@@ -27,6 +28,8 @@ interface UserContextValue {
   openLogin: () => void;
   closeLogin: () => void;
   switchTo: (user: User, providerLabel?: string) => Promise<void>;
+  /** Konto lokalne (tryb Mały Urząd); false — błąd logowania (komunikat w `error`). */
+  signInLocal: (login: string, password: string, providerLabel?: string) => Promise<boolean>;
   logout: () => void;
   userName: (id: number | null | undefined) => string;
   userById: (id: number | null | undefined) => User | undefined;
@@ -57,6 +60,21 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     } catch (e) {
       setError(`Logowanie nie powiodło się: ${errorMessage(e)}`);
       setLoginOpen(true);
+    }
+  }, []);
+
+  const signInLocal = useCallback(async (login: string, password: string, providerLabel?: string) => {
+    try {
+      const res = await localLogin(login, password, providerLabel);
+      setIdentityProvider(identityProviderLabel());
+      setCurrent(res.user);
+      setSessionExpired(false);
+      setLoginOpen(false);
+      setError(null);
+      return true;
+    } catch (e) {
+      setError(`Logowanie nie powiodło się: ${errorMessage(e)}`);
+      return false;
     }
   }, []);
 
@@ -119,12 +137,13 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       openLogin: () => setLoginOpen(true),
       closeLogin: () => setLoginOpen(false),
       switchTo: signIn,
+      signInLocal,
       logout,
       userById: byId,
       userName: (id) => byId(id)?.fullName ?? (id ? `#${id}` : "—"),
       reloadUsers,
     };
-  }, [users, current, loading, error, identityProvider, loginOpen, sessionExpired, signIn, logout, reloadUsers]);
+  }, [users, current, loading, error, identityProvider, loginOpen, sessionExpired, signIn, signInLocal, logout, reloadUsers]);
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
 }

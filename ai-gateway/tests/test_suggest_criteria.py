@@ -65,3 +65,13 @@ def test_invalid_llm_answer_falls_back(monkeypatch):
     data = criteria_suggest.suggest_criteria(BrokenLLM(), "Specjalista", "", "C", MANDATORY_C, "")
 
     assert data["mode"] == MODE_FALLBACK and len(data["suggestions"]) == 3
+
+
+def test_job_description_from_profile_is_masked_and_used(client):
+    body = {**BODY, "responsibilities_summary": "",
+            "job_description": "Opis stanowiska: prowadzi negocjacje z kontrahentami; kontakt: anna.nowak@kprm.gov.pl"}
+    data = client.post("/api/ai/suggest-criteria", json=body).json()
+
+    assert "Opis stanowiska pracy (art. 84" in data["masked_prompt"]
+    assert "anna.nowak@kprm.gov.pl" not in data["masked_prompt"]
+    assert data["suggestions"], "opis stanowiska wystarcza do podpowiedzi w trybie MOCK"

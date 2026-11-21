@@ -9,6 +9,7 @@ const ORDER: Record<CycleStatus, number> = {
   AWAITING_ACK: 3,
   COMPLETED: 4,
   APPEALED: 4,
+  APPEALED_TO_COURT: 4,
 };
 
 export function ProgressSteps({ status }: { status: CycleStatus }) {

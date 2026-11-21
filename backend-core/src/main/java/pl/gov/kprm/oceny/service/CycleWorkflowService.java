@@ -28,7 +28,8 @@ import static pl.gov.kprm.oceny.service.Access.*;
 public class CycleWorkflowService {
     static final int MAX_BULK_CYCLES = 500;
     private static final Set<CycleStatus> NOTES_VISIBLE_TO_EMPLOYEE =
-            EnumSet.of(CycleStatus.AWAITING_ACK, CycleStatus.COMPLETED, CycleStatus.APPEALED);
+            EnumSet.of(CycleStatus.AWAITING_ACK, CycleStatus.COMPLETED, CycleStatus.APPEALED,
+                    CycleStatus.APPEALED_TO_COURT);
 
     private final EvaluationCycleRepository cycles;
     private final EmployeeNoteRepository notes;
@@ -44,6 +45,7 @@ public class CycleWorkflowService {
     private final AuditService audit;
     private final ObjectMapper json;
     private final Clock clock;
+    private final org.springframework.context.ApplicationEventPublisher events;
     private final Map<Long, SchemaRules> schemaRules = new java.util.concurrent.ConcurrentHashMap<>();
 
     @Transactional(readOnly = true)
@@ -139,6 +141,7 @@ public class CycleWorkflowService {
         if (!employee.isActive()) {
             throw conflict("Konto pracownika jest nieaktywne (zanonimizowane)");
         }
+        requireSubjectToPeriodicEvaluation(employee);
         Long evaluator = evaluatorId != null ? evaluatorId : employee.getSupervisorId();
         if (evaluator == null) {
             throw conflict("Pracownik nie ma przypisanego bezpośredniego przełożonego");
@@ -203,6 +206,8 @@ public class CycleWorkflowService {
                 created.add(create(user, id, null, startDate, false, null, null));
             } catch (ResponseStatusException e) {
                 skipped.add(new BulkSkip(id, e.getReason()));
+            } catch (RuleViolationException e) {
+                skipped.add(new BulkSkip(id, e.getMessage()));
             }
         }
         audit.log(user, user.getOfficeId(), "CYCLES_BULK_CREATED", AuditService.CYCLE, null,
@@ -211,8 +216,29 @@ public class CycleWorkflowService {
         return new BulkResult(created, skipped);
     }
 
+    /** {@code blockedReason} ≠ null — pracownik nie podlega ocenie okresowej (status zatrudnienia). */
     public record DuePreview(LocalDate startDate, LocalDate dueDate, LocalDate criteriaDeadline, int periodMonths,
-                             String schemaVersion, SheetType suggestedSheet, Long defaultEvaluatorId, String defaultPlace) {
+                             String schemaVersion, SheetType suggestedSheet, Long defaultEvaluatorId, String defaultPlace,
+                             EmploymentStatus employmentStatus, String blockedReason) {
+    }
+
+    /** Pierwsza ocena (umowa na czas określony) i wyższe stanowiska SC nie są oceną okresową z art. 81. */
+    static String periodicEvaluationBlockedReason(EmploymentStatus status) {
+        return switch (status) {
+            case PRACOWNIK_SC_OKRESLONY -> "Pracownik zatrudniony na czas określony (12 mies.) podlega pierwszej ocenie "
+                    + "w 8.–11. miesiącu pracy (art. 37–38 w zw. z art. 35 ust. 3 ustawy o służbie cywilnej), "
+                    + "a nie ocenie okresowej";
+            case WYZSZE_STANOWISKO_SC -> "Osoba zajmująca wyższe stanowisko w służbie cywilnej nie podlega ocenie "
+                    + "okresowej (art. 81 ust. 1 ustawy o służbie cywilnej)";
+            default -> null;
+        };
+    }
+
+    private static void requireSubjectToPeriodicEvaluation(User employee) {
+        String reason = periodicEvaluationBlockedReason(employee.getEmploymentStatus());
+        if (reason != null) {
+            throw new RuleViolationException(List.of(reason));
+        }
     }
 
     /** Podgląd terminu przed utworzeniem cyklu — te same reguły co {@link #create}. */
@@ -230,7 +256,8 @@ public class CycleWorkflowService {
                 : deadlines.periodicEvaluationDue(start, schema.getPeriodMonths(), periods);
         return new DuePreview(start, due, deadlines.initialInterviewDeadline(start, reevaluation, rules),
                 reevaluation ? rules.reevaluationMonths() : schema.getPeriodMonths(), schema.getVersionCode(),
-                defaultSheet(employee), employee.getSupervisorId(), officeCity(employee.getOfficeId()));
+                defaultSheet(employee), employee.getSupervisorId(), officeCity(employee.getOfficeId()),
+                employee.getEmploymentStatus(), periodicEvaluationBlockedReason(employee.getEmploymentStatus()));
     }
 
     /** Pola formularza: miejscowość i okres oceny „od–do” przed zamknięciem cyklu (oceniający / zastępca / kadry). */
@@ -505,6 +532,7 @@ public class CycleWorkflowService {
         transition(cycle, user, CycleStatus.COMPLETED, "EVALUATION_ACKNOWLEDGED",
                 Map.of("appealDeadline", cycle.getAppealDeadline(), "signatureMethod", cycle.getSignatureMethod()));
         history.recordCompleted(cycle);
+        events.publishEvent(new CycleEvents.CycleClosed(cycle.getId()));
         return cycle;
     }
 
@@ -525,20 +553,33 @@ public class CycleWorkflowService {
         transition(cycle, user, CycleStatus.COMPLETED, "ACKNOWLEDGEMENT_REFUSED",
                 Map.of("reason", reason, "date", date, "appealDeadline", cycle.getAppealDeadline()));
         history.recordCompleted(cycle);
+        events.publishEvent(new CycleEvents.CycleClosed(cycle.getId()));
         return cycle;
     }
 
+    /**
+     * Sprzeciw (art. 83 ust. 1). Po REDO ocenę sporządza się po raz drugi i przysługuje od niej ponowny sprzeciw
+     * (art. 83 ust. 4); od oceny zmienionej przez organ służy już tylko odwołanie do sądu pracy (art. 83 ust. 5).
+     */
     public EvaluationCycle appeal(Long id, User user, String content) {
         EvaluationCycle cycle = asEmployee(id, user);
         LocalDate today = LocalDate.now(clock);
+        if (cycle.getDgDecision() == DgDecision.CHANGE) {
+            throw conflict("Ocena została zmieniona w trybie sprzeciwu — przysługuje odwołanie do sądu pracy (art. 83 ust. 5)");
+        }
         if (cycle.getAppealDeadline() != null && today.isAfter(cycle.getAppealDeadline())) {
             throw conflict("Termin na złożenie sprzeciwu upłynął " + cycle.getAppealDeadline());
         }
+        boolean repeated = cycle.getDgDecision() == DgDecision.REDO;
+        cycle.setDgDecision(null);
+        cycle.setDgComment(null);
+        cycle.setDgDecidedAt(null);
         cycle.setAppealText(content);
         cycle.setAppealedAt(OffsetDateTime.now(clock));
         cycle.setAppealDecisionDeadline(deadlines.appealDecisionDeadline(today, rulesOf(cycle)));
         transition(cycle, user, CycleStatus.APPEALED, "APPEAL_FILED",
-                Map.of("decisionDeadline", cycle.getAppealDecisionDeadline()));
+                Map.of("decisionDeadline", cycle.getAppealDecisionDeadline(), "repeated", repeated,
+                        "round", cycle.getAppealRound() + 1));
         return cycle;
     }
 
@@ -552,14 +593,25 @@ public class CycleWorkflowService {
         cycle.setDgDecision(decision);
         cycle.setDgComment(comment);
         cycle.setDgDecidedAt(OffsetDateTime.now(clock));
+        cycle.setAppealRound(cycle.getAppealRound() + 1);
 
         if (decision == DgDecision.REDO) {
             history.removeForCycle(cycle.getId());
+            LocalDate previousDue = cycle.getDueDate();
             cycle.setEvaluatedOn(null);
             cycle.setAcknowledgedAt(null);
             cycle.setAppealDeadline(null);
+            // nowa rozmowa oceniająca: .ics liczony od nowego terminu (SEQUENCE = appealRound), powiadomienia w locie
+            cycle.setEvaluationInterviewDate(null);
+            cycle.setSignatureMethod(null);
+            cycle.setRefusalDate(null);
+            cycle.setRefusalReason(null);
+            cycle.setDueDate(deadlines.redoEvaluationDue(LocalDate.now(clock), previousDue));
             transition(cycle, user, CycleStatus.EVALUATION_DRAFT, "APPEAL_DECIDED",
-                    payload("decision", decision, "comment", comment));
+                    payload("decision", decision, "comment", comment, "round", cycle.getAppealRound(),
+                            "dueDate", payload("from", previousDue, "to", cycle.getDueDate())));
+            events.publishEvent(new CycleEvents.DueDateChanged(cycle.getId(), previousDue, cycle.getDueDate(),
+                    CycleEvents.DueDateChanged.Reason.APPEAL_REDO));
             return cycle;
         }
         if (scores == null || scores.isEmpty()) {
@@ -577,8 +629,51 @@ public class CycleWorkflowService {
         Map<String, Object> p = resultPayload(result);
         p.put("decision", decision);
         p.put("comment", comment);
+        p.put("round", cycle.getAppealRound());
         transition(cycle, user, CycleStatus.COMPLETED, "APPEAL_DECIDED", p);
         history.recordCompleted(cycle);
+        events.publishEvent(new CycleEvents.CycleClosed(cycle.getId()));
+        if (result.outcome() == EvaluationOutcome.NEGATIVE) {
+            // zmieniona ocena negatywna: ponowna ocena po 6 miesiącach od zapoznania (art. 81 ust. 9)
+            LocalDate from = cycle.getAcknowledgedAt() != null ? cycle.getAcknowledgedAt() : LocalDate.now(clock);
+            events.publishEvent(new CycleEvents.DueDateChanged(cycle.getId(), null,
+                    deadlines.reevaluationDue(from, rulesOf(cycle)), CycleEvents.DueDateChanged.Reason.APPEAL_REEVALUATION));
+        }
+        return cycle;
+    }
+
+    /** Art. 83 ust. 5: odwołanie do sądu pracy rejestrują kadry / kierownictwo — arkusz objęty blokadą (legal hold). */
+    public EvaluationCycle registerCourtAppeal(Long id, User user, LocalDate filedOn, String caseReference) {
+        EvaluationCycle cycle = asOfficeManagement(id, user);
+        requireStatus(cycle, CycleStatus.COMPLETED);
+        if (filedOn.isAfter(LocalDate.now(clock))) {
+            throw conflict("Data wniesienia odwołania nie może być z przyszłości");
+        }
+        cycle.setCourtAppealFiledOn(filedOn);
+        cycle.setCourtCaseReference(caseReference == null || caseReference.isBlank() ? null : caseReference.trim());
+        cycle.setLegalHold(true);
+        transition(cycle, user, CycleStatus.APPEALED_TO_COURT, "COURT_APPEAL_REGISTERED",
+                payload("filedOn", filedOn, "caseReference", cycle.getCourtCaseReference(), "legalHold", true));
+        return cycle;
+    }
+
+    /** Prawomocne zakończenie sporu — cykl wraca do COMPLETED, blokada retencji zostaje zdjęta. */
+    public EvaluationCycle closeCourtAppeal(Long id, User user, String outcome) {
+        EvaluationCycle cycle = asOfficeManagement(id, user);
+        requireStatus(cycle, CycleStatus.APPEALED_TO_COURT);
+        if (outcome == null || outcome.isBlank()) {
+            throw new RuleViolationException(List.of("Podaj rozstrzygnięcie sądu (np. sygnaturę i treść wyroku)"));
+        }
+        cycle.setLegalHold(false);
+        transition(cycle, user, CycleStatus.COMPLETED, "COURT_APPEAL_CLOSED",
+                payload("outcome", outcome.trim(), "legalHold", false));
+        return cycle;
+    }
+
+    private EvaluationCycle asOfficeManagement(Long id, User user) {
+        EvaluationCycle cycle = load(id);
+        requireRole(user, Role.HR, Role.DG);
+        requireSameOffice(user, cycle.getOfficeId());
         return cycle;
     }
 

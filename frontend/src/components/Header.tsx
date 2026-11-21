@@ -190,14 +190,14 @@ function NotificationBell({ userId }: { userId: number }) {
               {items.map((n, i) => (
                 <li key={`${n.type}-${n.cycleId}-${i}`} className="border-b border-slate-100 last:border-0">
                   <Link
-                    href={`/cycles/${n.cycleId}`}
+                    href={n.cycleId ? `/cycles/${n.cycleId}` : "/hr"}
                     className="flex gap-3 px-4 py-3 text-sm hover:bg-gov-light focus:outline-none focus-visible:bg-gov-light"
                   >
                     <span aria-hidden className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${SEVERITY_DOT[n.severity]}`} />
                     <span>
                       <span className="block text-gov-text">{n.message}</span>
                       <span className="block text-xs text-slate-600">
-                        Cykl #{n.cycleId}
+                        {n.cycleId ? `Cykl #${n.cycleId}` : "Kadry"}
                         {n.dueDate ? ` · termin ${formatDate(n.dueDate)}` : ""}
                       </span>
                     </span>

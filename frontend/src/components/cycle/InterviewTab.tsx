@@ -8,6 +8,7 @@ import { formatDate } from "@/lib/labels";
 import type { FeedbackCheckin, InterviewPrepResponse, InterviewStage, SelfPrep } from "@/lib/types";
 import { useAsync } from "@/lib/useAsync";
 import type { CycleView } from "./context";
+import { PreInterviewSurveyCard } from "./PreInterviewSurveyCard";
 
 const STAGES: { id: InterviewStage; label: string }[] = [
   { id: "INITIAL", label: "Rozmowa rozpoczynająca (§ 5 ust. 1)" },
@@ -143,6 +144,7 @@ export function InterviewTab({ view }: { view: CycleView }) {
       </div>
 
       <div className="space-y-6 xl:col-span-2">
+        <PreInterviewSurveyCard view={view} />
         <SelfPrepCard view={view} />
         <CheckinsCard view={view} />
 

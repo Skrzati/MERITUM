@@ -1,4 +1,4 @@
-import type { Cycle, CycleStatus, EscalationLevel, Outcome, PerformanceLevel, Role, SheetType, User } from "./types";
+import type { Cycle, CycleStatus, EmploymentStatus, EscalationLevel, Outcome, PerformanceLevel, Role, SheetType, User } from "./types";
 
 export const ROLE_LABEL: Record<Role, string> = {
   EVALUATOR: "Kierownik",
@@ -18,6 +18,7 @@ export const STATUS_LABEL: Record<CycleStatus, string> = {
   AWAITING_ACK: "Oczekuje na zapoznanie",
   COMPLETED: "Zakończona",
   APPEALED: "Sprzeciw",
+  APPEALED_TO_COURT: "Odwołanie do sądu pracy",
 };
 
 export const STATUS_TONE: Record<CycleStatus, Tone> = {
@@ -28,7 +29,22 @@ export const STATUS_TONE: Record<CycleStatus, Tone> = {
   AWAITING_ACK: "amber",
   COMPLETED: "green",
   APPEALED: "red",
+  APPEALED_TO_COURT: "red",
 };
+
+export const EMPLOYMENT_STATUS_LABEL: Record<EmploymentStatus, string> = {
+  URZEDNIK_SC: "urzędnik SC (mianowany)",
+  PRACOWNIK_SC_NIEOKRESLONY: "pracownik SC — czas nieokreślony",
+  PRACOWNIK_SC_OKRESLONY: "pracownik SC — czas określony (pierwsza ocena)",
+  WYZSZE_STANOWISKO_SC: "wyższe stanowisko SC",
+};
+
+export const EMPLOYMENT_STATUS_ORDER: EmploymentStatus[] = [
+  "URZEDNIK_SC",
+  "PRACOWNIK_SC_NIEOKRESLONY",
+  "PRACOWNIK_SC_OKRESLONY",
+  "WYZSZE_STANOWISKO_SC",
+];
 
 export const LEVEL_LABEL: Record<PerformanceLevel, string> = {
   SIGNIFICANTLY_BELOW: "znacznie poniżej oczekiwań",

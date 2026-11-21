@@ -11,6 +11,7 @@ import pl.gov.kprm.oceny.export.IcsCalendarRenderer.Invitation;
 import pl.gov.kprm.oceny.repository.OfficeRepository;
 import pl.gov.kprm.oceny.repository.SchemaVersionRepository;
 import pl.gov.kprm.oceny.repository.UserRepository;
+import pl.gov.kprm.oceny.rules.RetentionRules;
 
 import java.time.Clock;
 import java.time.LocalDate;
@@ -45,11 +46,16 @@ public class IntegrationExportService {
     public record Party(Long id, String name, String role) {
     }
 
-    /** Metadane dokumentu elektronicznego wg instrukcji kancelaryjnej (identyfikator, twórca, odbiorca, typ, format…). */
+    /**
+     * Metadane dokumentu elektronicznego wg instrukcji kancelaryjnej (identyfikator, twórca, odbiorca, typ, format…)
+     * oraz retencja w części B akt osobowych (10 / 50 lat, legal hold) i jawna lista danych wyłączonych z archiwum.
+     */
     public record EzdPackage(String caseId, String title, String documentType, SheetType sheetType, String office,
                              List<Party> parties, CycleStatus status, LocalDate evaluatedOn, LocalDate acknowledgedAt,
                              SignatureMethod signatureMethod, String format, String access, String legalBasis,
-                             String pdfEndpoint, String schemaVersion, OffsetDateTime generatedAt) {
+                             String pdfEndpoint, String schemaVersion, OffsetDateTime generatedAt,
+                             RetentionRules.Retention retention, List<String> archiveContents,
+                             List<String> excludedFromArchive, String exclusionReason) {
     }
 
     public String interviewIcs(Long cycleId, User user) {
@@ -71,7 +77,7 @@ public class IntegrationExportService {
                 "cycle-" + cycleId + "-" + (initial ? "initial" : "evaluation") + UID_DOMAIN,
                 clock.instant(), date, DEFAULT_INTERVIEW_TIME, INTERVIEW_MINUTES, clock.getZone(), summary,
                 description + " Cykl nr " + cycleId + ".", location(cycle),
-                attendee(evaluator), List.of(attendee(employee), attendee(evaluator))));
+                attendee(evaluator), List.of(attendee(employee), attendee(evaluator)), cycle.getAppealRound()));
     }
 
     public EzdPackage ezdPackage(Long cycleId, User user) {
@@ -88,7 +94,10 @@ public class IntegrationExportService {
                         new Party(employee.getId(), employee.getFullName(), "OCENIANY")),
                 cycle.getStatus(), cycle.getEvaluatedOn(), cycle.getAcknowledgedAt(), cycle.getSignatureMethod(),
                 PDF_FORMAT, ACCESS_RESTRICTION, LEGAL_BASIS,
-                "/api/cycles/" + cycleId + "/pdf", schemaVersion, OffsetDateTime.now(clock));
+                "/api/cycles/" + cycleId + "/pdf", schemaVersion, OffsetDateTime.now(clock),
+                RetentionRules.of(employee.getEmploymentStartDate(), cycle.isLegalHold()),
+                List.of(EzdZip.pdfName(cycleId), EzdZip.METADATA_FILE),
+                RetentionRules.EXCLUDED_FROM_ARCHIVE, RetentionRules.EXCLUSION_REASON);
     }
 
     /** Jednoklikowa paczka EZD RP: arkusz PDF/A + metadane (audyt EZD_ZIP_EXPORTED). */

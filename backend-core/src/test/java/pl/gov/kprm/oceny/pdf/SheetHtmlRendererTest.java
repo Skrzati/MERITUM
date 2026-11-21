@@ -102,6 +102,17 @@ class SheetHtmlRendererTest {
     }
 
     @Test
+    void partOneOnlyPrintsCriteriaAndStartingSignatures() {
+        String html = renderer.render(positive(data(true, GRADE)), SheetParts.PART_ONE);
+        assertThat(html).contains("CZĘŚĆ I", "Kryteria obowiązkowe", "podpis ocenianego", "wydruk części I")
+                .doesNotContain("CZĘŚĆ II", "CZĘŚĆ III", "Pouczenie", "Średnia arytmetyczna");
+        assertThat(SheetParts.parse(null)).isEqualTo(SheetParts.ALL);
+        assertThat(SheetParts.parse("1")).isEqualTo(SheetParts.PART_ONE);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> SheetParts.parse("2"))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+    }
+
+    @Test
     void escapesUserContent() {
         String html = renderer.render(positive(data(true, GRADE)));
 

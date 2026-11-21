@@ -15,4 +15,6 @@ public class Office {
     private String name;
     private boolean hasDgRole;
     private String city;
+    /** Tryb Mały Urząd — logowanie kontem lokalnym (login + hasło) obok WK/PZ i AD. */
+    private boolean localAuthEnabled;
 }

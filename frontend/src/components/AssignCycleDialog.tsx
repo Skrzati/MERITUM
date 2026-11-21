@@ -211,7 +211,12 @@ function SingleForm({
       </label>
 
       <ProblemAlert error={previewError} />
-      {preview && (
+      {preview?.blockedReason && (
+        <Alert tone="amber" title="Pracownik nie podlega ocenie okresowej">
+          {preview.blockedReason}
+        </Alert>
+      )}
+      {preview && !preview.blockedReason && (
         <Alert tone="blue" title={`Termin oceny: ${formatDate(preview.dueDate)}`}>
           Okres {preview.periodMonths} mies. wg schematu <strong>{preview.schemaVersion}</strong> (najnowsza obowiązująca wersja,
           istniejące cykle zachowują swoją — § 13). Ustalenie kryteriów i rozmowa rozpoczynająca do{" "}
@@ -223,7 +228,7 @@ function SingleForm({
         <Button variant="secondary" onClick={onClose}>
           Anuluj
         </Button>
-        <Button onClick={create} busy={busy} disabled={!evaluatorId}>
+        <Button onClick={create} busy={busy} disabled={!evaluatorId || Boolean(preview?.blockedReason)}>
           Utwórz cykl
         </Button>
       </div>

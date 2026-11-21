@@ -1,6 +1,7 @@
 package pl.gov.kprm.oceny.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -12,6 +13,7 @@ import org.springframework.web.server.ResponseStatusException;
 import pl.gov.kprm.oceny.domain.EvaluationCycle;
 import pl.gov.kprm.oceny.domain.Role;
 import pl.gov.kprm.oceny.domain.User;
+import pl.gov.kprm.oceny.repository.UserRepository;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -33,22 +35,25 @@ public class AiProxyService {
             "suggest-criteria");
     private static final Role[] SUPERVISOR_ROLES = {Role.EVALUATOR, Role.DG, Role.HR};
     static final String TRUNCATION_MARK = "…[przycięto]";
+    static final String SUGGEST_CRITERIA = "suggest-criteria";
 
     private final RestClient http;
     private final String baseUrl;
     private final AuditService audit;
     private final CycleWorkflowService workflow;
+    private final UserRepository users;
     private final int maxRequestBytes;
     private final int auditPromptMaxChars;
 
     public AiProxyService(RestClient.Builder builder, @Value("${app.ai-gateway-url}") String baseUrl,
-                          AuditService audit, CycleWorkflowService workflow,
+                          AuditService audit, CycleWorkflowService workflow, UserRepository users,
                           @Value("${app.ai.max-request-bytes:65536}") int maxRequestBytes,
                           @Value("${app.ai.audit-prompt-max-chars:4000}") int auditPromptMaxChars) {
         this.http = builder.build();
         this.baseUrl = baseUrl.replaceAll("/+$", "");
         this.audit = audit;
         this.workflow = workflow;
+        this.users = users;
         this.maxRequestBytes = maxRequestBytes;
         this.auditPromptMaxChars = auditPromptMaxChars;
     }
@@ -66,6 +71,11 @@ public class AiProxyService {
                     "Żądanie do AI przekracza limit " + maxRequestBytes / 1024 + " KB");
         }
         EvaluationCycle cycle = cycleId == null ? null : workflow.get(cycleId, user);
+        if (SUGGEST_CRITERIA.equals(operation) && cycle != null && body instanceof ObjectNode request) {
+            // art. 84: opis stanowiska z profilu pracownika (kadry), a nie z formularza przeglądarki
+            users.findById(cycle.getEmployeeId()).map(User::getJobDescription)
+                    .filter(d -> !d.isBlank()).ifPresent(d -> request.put("job_description", d));
+        }
         JsonNode response;
         try {
             response = http.post().uri(baseUrl + "/api/ai/" + operation)

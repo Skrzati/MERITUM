@@ -21,7 +21,12 @@ public final class IcsCalendarRenderer {
 
     public record Invitation(String uid, Instant stamp, LocalDate date, LocalTime start, int durationMinutes,
                              ZoneId zone, String summary, String description, String location,
-                             Attendee organizer, List<Attendee> attendees) {
+                             Attendee organizer, List<Attendee> attendees, int sequence) {
+        public Invitation(String uid, Instant stamp, LocalDate date, LocalTime start, int durationMinutes, ZoneId zone,
+                          String summary, String description, String location, Attendee organizer,
+                          List<Attendee> attendees) {
+            this(uid, stamp, date, start, durationMinutes, zone, summary, description, location, organizer, attendees, 0);
+        }
     }
 
     private IcsCalendarRenderer() {
@@ -39,6 +44,8 @@ public final class IcsCalendarRenderer {
         line(out, "BEGIN:VEVENT");
         line(out, "UID:" + inv.uid());
         line(out, "DTSTAMP:" + UTC_FORMAT.format(inv.stamp()));
+        // ten sam UID + wyższy SEQUENCE = aktualizacja wydarzenia w kalendarzu (RFC 5545 § 3.8.7.4)
+        line(out, "SEQUENCE:" + inv.sequence());
         line(out, "DTSTART:" + UTC_FORMAT.format(start));
         line(out, "DTEND:" + UTC_FORMAT.format(end));
         line(out, "SUMMARY:" + escape(inv.summary()));

@@ -23,11 +23,13 @@ public final class Dtos {
      * Konto do wyboru w logowaniu demo (endpoint publiczny) — bez e-maila i dat kadrowych; pola stanowiska i stopnia
      * są potrzebne interfejsowi (podpowiedź kryteriów, blokada wniosku przy 9. stopniu).
      */
-    public record DemoUserDto(Long id, Long officeId, String fullName, Role role, boolean civilServant, Long supervisorId,
+    public record DemoUserDto(Long id, Long officeId, String fullName, Role role, boolean civilServant,
+                              EmploymentStatus employmentStatus, Long supervisorId,
                               String department, String positionTitle, Integer civilServiceGrade, String officeName,
                               String officeCity, boolean officeHasDgRole) {
         public static DemoUserDto of(User u, Office office) {
             return new DemoUserDto(u.getId(), u.getOfficeId(), u.getFullName(), u.getRole(), u.isCivilServant(),
+                    u.getEmploymentStatus(),
                     u.getSupervisorId(), u.getDepartment(), u.getPositionTitle(), u.getCivilServiceGrade(),
                     office == null ? null : office.getName(), office == null ? null : office.getCity(),
                     office == null || office.isHasDgRole());
@@ -35,13 +37,29 @@ public final class Dtos {
     }
 
     public record UserDto(Long id, Long officeId, String fullName, String firstName, String lastName, String email,
-                          Role role, boolean civilServant, Long supervisorId, String department, String positionTitle,
-                          Integer appointmentYear, Integer civilServiceGrade, LocalDate lastGradeDate, boolean active) {
+                          Role role, boolean civilServant, EmploymentStatus employmentStatus, Long supervisorId,
+                          String department, String positionTitle,
+                          Integer appointmentYear, Integer civilServiceGrade, LocalDate lastGradeDate, boolean active,
+                          String jobDescription, LocalDate employmentStartDate) {
         public static UserDto of(User u) {
             return new UserDto(u.getId(), u.getOfficeId(), u.getFullName(), u.getFirstName(), u.getLastName(),
-                    u.getEmail(), u.getRole(), u.isCivilServant(), u.getSupervisorId(), u.getDepartment(),
+                    u.getEmail(), u.getRole(), u.isCivilServant(), u.getEmploymentStatus(), u.getSupervisorId(),
+                    u.getDepartment(),
                     u.getPositionTitle(), u.getAppointmentYear(), u.getCivilServiceGrade(), u.getLastGradeDate(),
-                    u.isActive());
+                    u.isActive(), u.getJobDescription(), u.getEmploymentStartDate());
+        }
+    }
+
+    /** Konto w /admin (tryb Mały Urząd): bez skrótu hasła — tylko informacja, czy hasło lokalne jest ustawione. */
+    public record AccountDto(UserDto user, boolean hasLocalPassword, OffsetDateTime passwordChangedAt) {
+        public static AccountDto of(User u) {
+            return new AccountDto(UserDto.of(u), u.hasLocalPassword(), u.getPasswordChangedAt());
+        }
+    }
+
+    public record OfficeDto(Long id, String name, String city, boolean hasDgRole, boolean localAuthEnabled) {
+        public static OfficeDto of(Office o) {
+            return new OfficeDto(o.getId(), o.getName(), o.getCity(), o.isHasDgRole(), o.isLocalAuthEnabled());
         }
     }
 
@@ -98,7 +116,9 @@ public final class Dtos {
                            LocalDate mandatoryGradeDeadline, String delayReason, SignatureMethod signatureMethod,
                            long overdueDays, boolean officeHasDgRole, String appealAuthority,
                            PreviousEvaluation previousEvaluation, EvaluationCycle.IprzStatus iprzStatus,
-                           Long iprzApprovedBy, OffsetDateTime iprzApprovedAt, OffsetDateTime iprzEmployeeAckAt) {
+                           Long iprzApprovedBy, OffsetDateTime iprzApprovedAt, OffsetDateTime iprzEmployeeAckAt,
+                           boolean legalHold, LocalDate courtAppealFiledOn, String courtCaseReference,
+                           int appealRound, boolean appealAllowed, OffsetDateTime workingNotesPurgedAt) {
         /** Pola wyliczane: terminy, art. 89 ust. 2, opóźnienie, organ rozpatrujący sprzeciw, poprzednia ocena. */
         public record Facts(LocalDate criteriaDeadline, boolean gradeEligible, LocalDate gradeDeadline, long overdueDays,
                             boolean officeHasDgRole, PreviousEvaluation previousEvaluation) {
@@ -117,7 +137,10 @@ public final class Dtos {
                     c.getDgComment(), c.getDgDecidedAt(), f.gradeEligible(), f.gradeDeadline(), c.getDelayReason(),
                     c.getSignatureMethod(), f.overdueDays(), f.officeHasDgRole(),
                     AppealAuthority.of(f.officeHasDgRole()).label(), f.previousEvaluation(), c.getIprzStatus(),
-                    c.getIprzApprovedBy(), c.getIprzApprovedAt(), c.getIprzEmployeeAckAt());
+                    c.getIprzApprovedBy(), c.getIprzApprovedAt(), c.getIprzEmployeeAckAt(), c.isLegalHold(),
+                    c.getCourtAppealFiledOn(), c.getCourtCaseReference(), c.getAppealRound(),
+                    c.getStatus() == CycleStatus.COMPLETED && c.getDgDecision() != DgDecision.CHANGE,
+                    c.getWorkingNotesPurgedAt());
         }
 
         public static CycleDto of(EvaluationCycle c) {

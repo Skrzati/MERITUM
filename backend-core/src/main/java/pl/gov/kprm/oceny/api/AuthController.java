@@ -7,6 +7,7 @@ import pl.gov.kprm.oceny.api.Dtos.DemoUserDto;
 import pl.gov.kprm.oceny.api.Dtos.LoginResponse;
 import pl.gov.kprm.oceny.api.Dtos.UserDto;
 import pl.gov.kprm.oceny.api.Requests.GovLoginRequest;
+import pl.gov.kprm.oceny.api.Requests.LocalLoginRequest;
 import pl.gov.kprm.oceny.auth.CurrentUser;
 import pl.gov.kprm.oceny.auth.JwtService;
 import pl.gov.kprm.oceny.domain.Office;
@@ -15,6 +16,7 @@ import pl.gov.kprm.oceny.repository.OfficeRepository;
 import pl.gov.kprm.oceny.repository.UserRepository;
 import pl.gov.kprm.oceny.service.Access;
 import pl.gov.kprm.oceny.service.AuditService;
+import pl.gov.kprm.oceny.service.LocalAccountService;
 
 import java.util.List;
 import java.util.Map;
@@ -27,11 +29,14 @@ import java.util.stream.Collectors;
 public class AuthController {
     /** Symulacja logowania przez Węzeł Krajowy / Profil Zaufany — środowisko demonstracyjne. */
     static final String IDENTITY_PROVIDER = "SIMULATED_WK_PZ";
+    /** Konto lokalne urzędu (tryb Mały Urząd) — login i hasło BCrypt. */
+    static final String LOCAL_PROVIDER = "LOCAL";
 
     private final UserRepository users;
     private final OfficeRepository offices;
     private final JwtService jwt;
     private final AuditService audit;
+    private final LocalAccountService localAccounts;
 
     @GetMapping("/demo-users")
     public List<DemoUserDto> demoUsers() {
@@ -47,6 +52,14 @@ public class AuthController {
         }
         audit.log(user, user.getOfficeId(), "LOGIN", AuditService.USER, user.getId(), Map.of("idp", IDENTITY_PROVIDER));
         return new LoginResponse(jwt.issue(user, IDENTITY_PROVIDER), "Bearer", jwt.ttlSeconds(), IDENTITY_PROVIDER,
+                UserDto.of(user));
+    }
+
+    @PostMapping("/local-login")
+    public LoginResponse localLogin(@Valid @RequestBody LocalLoginRequest req) {
+        User user = localAccounts.login(req.login(), req.password());
+        audit.log(user, user.getOfficeId(), "LOGIN", AuditService.USER, user.getId(), Map.of("idp", LOCAL_PROVIDER));
+        return new LoginResponse(jwt.issue(user, LOCAL_PROVIDER), "Bearer", jwt.ttlSeconds(), LOCAL_PROVIDER,
                 UserDto.of(user));
     }
 

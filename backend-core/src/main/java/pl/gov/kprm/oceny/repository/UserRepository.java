@@ -5,6 +5,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import pl.gov.kprm.oceny.domain.Role;
 import pl.gov.kprm.oceny.domain.User;
 
 import java.util.List;
@@ -16,6 +17,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
     List<User> findAllByActiveTrueOrderByIdAsc();
 
     List<User> findByOfficeIdAndDepartmentIgnoreCaseAndActiveTrue(Long officeId, String department);
+
+    List<User> findByOfficeIdAndActiveTrueOrderByIdAsc(Long officeId);
+
+    List<User> findByOfficeIdAndRoleAndActiveTrue(Long officeId, Role role);
 
     boolean existsBySupervisorId(Long supervisorId);
 

@@ -95,4 +95,33 @@ class DeadlineServiceTest {
         // zapoznanie 2026-11-04 + 7 = 2026-11-11 (święto) -> 2026-11-12
         assertThat(deadlines.appealDeadline(LocalDate.of(2026, 11, 4))).isEqualTo(LocalDate.of(2026, 11, 12));
     }
+
+    @Test
+    void art115KcSundayAndHolidayDeadlineMovesToNextWorkingDay() {
+        assertThat(deadlines.shiftToWorkingDay(LocalDate.of(2026, 11, 22))).as("niedziela").isEqualTo(LocalDate.of(2026, 11, 23));
+        assertThat(deadlines.appealDeadline(LocalDate.of(2026, 11, 4))).as("7 dni → 11.11 (święto)")
+                .isEqualTo(LocalDate.of(2026, 11, 12));
+    }
+
+    @Test
+    void reevaluationAfterNegativeIgnoresLongAbsenceUnlikePeriodicEvaluation() {
+        LocalDate start = LocalDate.of(2026, 3, 2);
+        List<AbsencePeriod> longSickLeave = List.of(new AbsencePeriod(LocalDate.of(2026, 4, 1), LocalDate.of(2026, 6, 30)));
+        assertThat(deadlines.periodicEvaluationDue(start, 6, longSickLeave)).as("art. 81 ust. 7 przedłuża")
+                .isAfter(LocalDate.of(2026, 9, 2));
+        assertThat(deadlines.reevaluationDue(start)).as("art. 81 ust. 9 — bez przedłużenia").isEqualTo(LocalDate.of(2026, 9, 2));
+    }
+
+    @Test
+    void reevaluationCriteriaDeadlineIsSevenDays() {
+        assertThat(deadlines.initialInterviewDeadline(LocalDate.of(2026, 11, 2), true)).isEqualTo(LocalDate.of(2026, 11, 9));
+        assertThat(deadlines.initialInterviewDeadline(LocalDate.of(2026, 11, 2), false)).isEqualTo(LocalDate.of(2026, 12, 2));
+    }
+
+    @Test
+    void redoEvaluationDueNeverShortensRunningDeadline() {
+        LocalDate decided = LocalDate.of(2026, 11, 20);
+        assertThat(deadlines.redoEvaluationDue(decided, LocalDate.of(2026, 10, 1))).isEqualTo(LocalDate.of(2026, 12, 4));
+        assertThat(deadlines.redoEvaluationDue(decided, LocalDate.of(2027, 1, 15))).isEqualTo(LocalDate.of(2027, 1, 15));
+    }
 }

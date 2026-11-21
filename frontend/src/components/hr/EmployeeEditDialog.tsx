@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Alert, Button, Field, inputClass, ProblemAlert } from "@/components/ui";
 import { api } from "@/lib/api";
-import { ROLE_LABEL } from "@/lib/labels";
-import type { Role, User } from "@/lib/types";
+import { EMPLOYMENT_STATUS_LABEL, EMPLOYMENT_STATUS_ORDER, ROLE_LABEL } from "@/lib/labels";
+import type { EmploymentStatus, Role, User } from "@/lib/types";
 
 const EDITABLE_ROLES: Role[] = ["EVALUATED", "EVALUATOR", "HR", "DG"];
 const GRADES = [1, 2, 3, 4, 5, 6, 7, 8, 9];
@@ -28,11 +28,13 @@ export function EmployeeEditDialog({
     department: employee.department ?? "",
     positionTitle: employee.positionTitle ?? "",
     role: employee.role,
-    civilServant: employee.civilServant,
+    employmentStatus: employee.employmentStatus,
     civilServiceGrade: employee.civilServiceGrade ?? "",
     appointmentYear: employee.appointmentYear ?? "",
     lastGradeDate: employee.lastGradeDate ?? "",
     supervisorId: employee.supervisorId ?? "",
+    jobDescription: employee.jobDescription ?? "",
+    employmentStartDate: employee.employmentStartDate ?? "",
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -57,11 +59,13 @@ export function EmployeeEditDialog({
           department: form.department || null,
           positionTitle: form.positionTitle || null,
           role: form.role,
-          civilServant: form.civilServant,
+          employmentStatus: form.employmentStatus,
           civilServiceGrade: form.civilServiceGrade === "" ? null : Number(form.civilServiceGrade),
           appointmentYear: form.appointmentYear === "" ? null : Number(form.appointmentYear),
           lastGradeDate: form.lastGradeDate || null,
           supervisorId: form.supervisorId === "" ? null : Number(form.supervisorId),
+          jobDescription: form.jobDescription,
+          employmentStartDate: form.employmentStartDate || null,
         },
       });
       await onSaved();
@@ -112,13 +116,24 @@ export function EmployeeEditDialog({
             </select>
           </Field>
         </div>
+        <Field label="Opis stanowiska pracy (art. 84)" hint="Przekazywany (po maskowaniu danych osobowych) do podpowiedzi kryteriów AI.">
+          <textarea className={inputClass} rows={3} maxLength={10000} value={form.jobDescription} onChange={(e) => set("jobDescription", e.target.value)} />
+        </Field>
+        <Field label="Data nawiązania stosunku pracy" hint="Retencja akt osobowych (część B): po 31.12.2018 — 10 lat, wcześniej lub brak daty — 50 lat.">
+          <input type="date" className={inputClass} value={form.employmentStartDate} onChange={(e) => set("employmentStartDate", e.target.value)} />
+        </Field>
         <fieldset className="rounded border border-slate-300 p-3">
           <legend className="px-1 text-sm font-bold text-gov-text">Służba cywilna</legend>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" className="h-4 w-4 accent-navy-700" checked={form.civilServant} onChange={(e) => set("civilServant", e.target.checked)} />
-            Urzędnik służby cywilnej (mianowany)
-          </label>
-          {form.civilServant && (
+          <Field label="Status zatrudnienia" hint="Umowa na czas określony — pierwsza ocena (art. 37–38), nie ocena okresowa; wyższe stanowiska SC — bez oceny okresowej.">
+            <select className={inputClass} value={form.employmentStatus} onChange={(e) => set("employmentStatus", e.target.value as EmploymentStatus)}>
+              {EMPLOYMENT_STATUS_ORDER.map((s) => (
+                <option key={s} value={s}>
+                  {EMPLOYMENT_STATUS_LABEL[s]}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {form.employmentStatus === "URZEDNIK_SC" && (
             <div className="mt-3 grid gap-4 sm:grid-cols-3">
               <Field label="Stopień służbowy">
                 <select className={inputClass} value={form.civilServiceGrade} onChange={(e) => set("civilServiceGrade", e.target.value === "" ? "" : Number(e.target.value))}>

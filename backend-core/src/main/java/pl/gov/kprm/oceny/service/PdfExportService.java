@@ -10,6 +10,7 @@ import pl.gov.kprm.oceny.domain.User;
 import pl.gov.kprm.oceny.pdf.GotenbergClient;
 import pl.gov.kprm.oceny.pdf.SheetData;
 import pl.gov.kprm.oceny.pdf.SheetHtmlRenderer;
+import pl.gov.kprm.oceny.pdf.SheetParts;
 import pl.gov.kprm.oceny.repository.IprzItemRepository;
 import pl.gov.kprm.oceny.repository.OfficeRepository;
 import pl.gov.kprm.oceny.repository.UserRepository;
@@ -36,11 +37,16 @@ public class PdfExportService {
 
     @Transactional
     public byte[] export(Long cycleId, User user) {
+        return export(cycleId, user, SheetParts.ALL);
+    }
+
+    @Transactional
+    public byte[] export(Long cycleId, User user, SheetParts parts) {
         SheetData data = sheetData(workflow.get(cycleId, user));
-        byte[] pdf = gotenberg.htmlToPdf(renderer.render(data));
+        byte[] pdf = gotenberg.htmlToPdf(renderer.render(data, parts));
         audit.log(user, data.cycle().getOfficeId(), "PDF_EXPORTED", AuditService.CYCLE, cycleId,
-                Map.of("sheetType", data.cycle().getSheetType(), "bytes", pdf.length,
-                        "includesGradeRequest", data.includesGradeRequest()));
+                Map.of("sheetType", data.cycle().getSheetType(), "bytes", pdf.length, "parts", parts,
+                        "includesGradeRequest", parts == SheetParts.ALL && data.includesGradeRequest()));
         return pdf;
     }
 

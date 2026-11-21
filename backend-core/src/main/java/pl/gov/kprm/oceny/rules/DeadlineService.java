@@ -24,6 +24,11 @@ public class DeadlineService {
     public static final int MANDATORY_GRADE_DAYS = 30;
     /** § 9 ust. 1 i ust. 2 — 30 dni od zmiany stanowiska. */
     public static final int SCOPE_CHANGE_DAYS = 30;
+    /**
+     * Ponowne sporządzenie oceny po uwzględnieniu sprzeciwu (art. 83 ust. 4) — ustawa nie określa terminu; przyjęto
+     * termin organizacyjny równy terminowi rozpatrzenia sprzeciwu, liczony od decyzji.
+     */
+    public static final int REDO_EVALUATION_DAYS = APPEAL_DECISION_DAYS;
     /** Art. 81 ust. 6 i ust. 8 — próg 6 miesięcy. */
     public static final int SIX_MONTHS = 6;
 
@@ -45,7 +50,10 @@ public class DeadlineService {
         return dow != DayOfWeek.SATURDAY && dow != DayOfWeek.SUNDAY && !isPublicHoliday(date);
     }
 
-    /** Termin przypadający na sobotę lub dzień wolny przesuwa się na najbliższy dzień roboczy. */
+    /**
+     * Art. 115 KC: termin przypadający na sobotę lub dzień ustawowo wolny od pracy (niedziela, święto) upływa
+     * najbliższego dnia roboczego.
+     */
     public LocalDate shiftToWorkingDay(LocalDate date) {
         LocalDate d = date;
         while (!isWorkingDay(d)) {
@@ -100,6 +108,12 @@ public class DeadlineService {
 
     public LocalDate appealDecisionDeadline(LocalDate appealedOn, SchemaRules rules) {
         return shiftToWorkingDay(appealedOn.plusDays(rules.appealDecisionDays()));
+    }
+
+    /** Termin ponownego sporządzenia oceny po decyzji REDO; nie skraca terminu, który jeszcze nie upłynął. */
+    public LocalDate redoEvaluationDue(LocalDate decidedOn, LocalDate currentDue) {
+        LocalDate redo = shiftToWorkingDay(decidedOn.plusDays(REDO_EVALUATION_DAYS));
+        return currentDue != null && currentDue.isAfter(redo) ? currentDue : redo;
     }
 
     public LocalDate mandatoryGradeDeadline(LocalDate acknowledgedAt) {

@@ -33,6 +33,15 @@ services:
       retries: 10
     networks: [backend]
 
+  # Przechwytywanie e-maili w demo (SMTP 1025 w sieci Dockera, podgląd skrzynki http://127.0.0.1:8025)
+  mailpit:
+    image: axllent/mailpit:v1.21.8
+    container_name: oceny-mailpit
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"
+    networks: [backend]
+
   backend-core:
     build: ../backend-core
     image: oceny/backend-core:latest
@@ -51,6 +60,13 @@ services:
       RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
       RATE_LIMIT_LOGIN_PER_WINDOW: ${RATE_LIMIT_LOGIN_PER_WINDOW:-30}
       RATE_LIMIT_AI_PER_WINDOW: ${RATE_LIMIT_AI_PER_WINDOW:-60}
+      MAIL_ENABLED: ${MAIL_ENABLED:-true}
+      MAIL_HOST: ${MAIL_HOST:-mailpit}
+      MAIL_PORT: ${MAIL_PORT:-1025}
+      MAIL_FROM: ${MAIL_FROM:-meritum@kprm-demo.gov.pl}
+      RETENTION_PURGE_ENABLED: ${RETENTION_PURGE_ENABLED:-true}
+      RETENTION_GRACE_DAYS: ${RETENTION_GRACE_DAYS:-30}
+      BCRYPT_STRENGTH: ${BCRYPT_STRENGTH:-12}
     # tylko lokalnie (Swagger, testy) — przeglądarka łączy się przez proxy frontendu
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8080}:8080"
@@ -59,6 +75,8 @@ services:
         condition: service_healthy
       gotenberg:
         condition: service_healthy
+      mailpit:
+        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
       interval: 10s

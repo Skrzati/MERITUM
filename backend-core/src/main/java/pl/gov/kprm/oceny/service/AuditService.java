@@ -27,9 +27,18 @@ public class AuditService {
     private final ObjectMapper json;
 
     public void log(User actor, Long officeId, String action, String entityType, Long entityId, Map<String, ?> payload) {
+        write(actor.getId(), officeId, action, entityType, entityId, payload);
+    }
+
+    /** Zdarzenie systemowe (bez aktora): wysyłka e-mail, czyszczenie danych pomocniczych. */
+    public void logSystem(Long officeId, String action, String entityType, Long entityId, Map<String, ?> payload) {
+        write(null, officeId, action, entityType, entityId, payload);
+    }
+
+    private void write(Long actorId, Long officeId, String action, String entityType, Long entityId, Map<String, ?> payload) {
         AuditLog entry = new AuditLog();
         entry.setOfficeId(officeId);
-        entry.setActorId(actor.getId());
+        entry.setActorId(actorId);
         entry.setAction(action);
         entry.setEntityType(entityType);
         entry.setEntityId(entityId);

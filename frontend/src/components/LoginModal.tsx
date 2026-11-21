@@ -9,12 +9,22 @@ import { useUser } from "./UserProvider";
 const PROVIDERS = [
   { id: "SSO_AD", label: "Urzędowe SSO (Active Directory)", hint: "Konto domenowe urzędu — symulacja w wersji demo." },
   { id: "WK", label: "Węzeł Krajowy (login.gov.pl — symulacja)", hint: "Profil Zaufany / e-dowód / mObywatel — symulacja." },
+  {
+    id: "LOCAL",
+    label: "Konto lokalne urzędu (login i hasło)",
+    hint: "Tryb Mały Urząd — dla urzędów bez AD i Węzła Krajowego; konto zakłada administrator.",
+  },
 ] as const;
 type ProviderId = (typeof PROVIDERS)[number]["id"];
 
-/** Okno logowania: oba dostawcy są symulowane — token JWT wydaje backend (POST /api/auth/gov-login). */
+/**
+ * Okno logowania: SSO i Węzeł Krajowy są symulowane (POST /api/auth/gov-login), konto lokalne weryfikuje hasło
+ * w backendzie (POST /api/auth/local-login). W obu przypadkach token JWT wydaje backend.
+ */
 export function LoginModal({ onClose }: { onClose: () => void }) {
-  const { users, current, switchTo, sessionExpired, error } = useUser();
+  const { users, current, switchTo, signInLocal, sessionExpired, error } = useUser();
+  const [login, setLogin] = useState("");
+  const [password, setPassword] = useState("");
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [provider, setProvider] = useState<ProviderId>("WK");
   const [userId, setUserId] = useState<number>(current?.id ?? users[0]?.id ?? 0);
@@ -27,10 +37,17 @@ export function LoginModal({ onClose }: { onClose: () => void }) {
     return () => dialog?.close();
   }, []);
 
-  const login = async (user: User | undefined) => {
+  const label = PROVIDERS.find((p) => p.id === provider)?.label;
+  const signIn = async (user: User | undefined) => {
     if (!user) return;
     setBusy(true);
-    await switchTo(user, PROVIDERS.find((p) => p.id === provider)?.label);
+    await switchTo(user, label);
+    setBusy(false);
+  };
+  const signInWithPassword = async () => {
+    setBusy(true);
+    const ok = await signInLocal(login.trim(), password, label);
+    if (ok) setPassword("");
     setBusy(false);
   };
 
@@ -81,6 +98,37 @@ export function LoginModal({ onClose }: { onClose: () => void }) {
           ))}
         </fieldset>
 
+        {provider === "LOCAL" ? (
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void signInWithPassword();
+            }}
+          >
+            <Field label="Login (adres e-mail konta)">
+              <input className={inputClass} type="email" autoComplete="username" value={login} onChange={(e) => setLogin(e.target.value)} />
+            </Field>
+            <Field label="Hasło">
+              <input
+                className={inputClass}
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </Field>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={onClose}>
+                Anuluj
+              </Button>
+              <Button type="submit" busy={busy} disabled={!login.trim() || !password}>
+                Zaloguj
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <>
         <Field label="Konto (demo)">
           <select className={inputClass} value={userId} onChange={(e) => setUserId(Number(e.target.value))}>
             {users.map((u) => (
@@ -99,7 +147,7 @@ export function LoginModal({ onClose }: { onClose: () => void }) {
               <button
                 key={u.id}
                 type="button"
-                onClick={() => void login(u)}
+                onClick={() => void signIn(u)}
                 className="rounded px-2.5 py-1 text-xs font-semibold text-gov-blue ring-1 ring-inset ring-slate-300 hover:bg-gov-light focus:outline-none focus-visible:ring-2 focus-visible:ring-gov-blue"
               >
                 {ROLE_LABEL[u.role]}
@@ -116,10 +164,12 @@ export function LoginModal({ onClose }: { onClose: () => void }) {
           <Button variant="secondary" onClick={onClose}>
             Anuluj
           </Button>
-          <Button onClick={() => void login(users.find((u) => u.id === userId))} busy={busy} disabled={!userId}>
+          <Button onClick={() => void signIn(users.find((u) => u.id === userId))} busy={busy} disabled={!userId}>
             Zaloguj
           </Button>
         </div>
+          </>
+        )}
       </div>
     </dialog>
   );

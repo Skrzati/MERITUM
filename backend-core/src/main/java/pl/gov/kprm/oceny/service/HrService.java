@@ -50,6 +50,7 @@ public class HrService {
     private final RescheduleRequestRepository reschedules;
     private final EvaluationHistoryService historyService;
     private final Clock clock;
+    private final org.springframework.context.ApplicationEventPublisher events;
 
     public record ImportResult(int imported, List<String> skipped, List<String> errors) {
     }
@@ -107,6 +108,10 @@ public class HrService {
             rescheduled.ifPresent(r -> p.put("rescheduledDueDate", r));
             p.put("keptRescheduledDueDate", keepRescheduled);
             audit.log(hr, cycle.getOfficeId(), "DUE_DATE_RECALCULATED", AuditService.CYCLE, cycle.getId(), p);
+            if (cycle.getDueDate().isAfter(previous)) {
+                events.publishEvent(new CycleEvents.DueDateChanged(cycle.getId(), previous, cycle.getDueDate(),
+                        CycleEvents.DueDateChanged.Reason.ABSENCE_EXTENSION));
+            }
         }
         return active;
     }
@@ -118,8 +123,16 @@ public class HrService {
 
     /** Pola edytowalne przez kadry (null = bez zmian). */
     public record EmployeeUpdate(String firstName, String lastName, String department, String positionTitle, Role role,
-                                 Boolean civilServant, Integer civilServiceGrade, Integer appointmentYear,
-                                 LocalDate lastGradeDate, Long supervisorId) {
+                                 Boolean civilServant, EmploymentStatus employmentStatus, Integer civilServiceGrade,
+                                 Integer appointmentYear,
+                                 LocalDate lastGradeDate, Long supervisorId, String jobDescription,
+                                 LocalDate employmentStartDate) {
+        public EmployeeUpdate(String firstName, String lastName, String department, String positionTitle, Role role,
+                              Boolean civilServant, EmploymentStatus employmentStatus, Integer civilServiceGrade,
+                              Integer appointmentYear, LocalDate lastGradeDate, Long supervisorId) {
+            this(firstName, lastName, department, positionTitle, role, civilServant, employmentStatus,
+                    civilServiceGrade, appointmentYear, lastGradeDate, supervisorId, null, null);
+        }
     }
 
     public User updateEmployee(User hr, Long employeeId, EmployeeUpdate u) {
@@ -147,10 +160,20 @@ public class HrService {
         set(changed, "lastName", e.getLastName(), trim(u.lastName()), e::setLastName);
         set(changed, "department", e.getDepartment(), trim(u.department()), e::setDepartment);
         set(changed, "positionTitle", e.getPositionTitle(), trim(u.positionTitle()), e::setPositionTitle);
-        set(changed, "civilServant", e.isCivilServant(), u.civilServant(), e::setCivilServant);
+        if (u.employmentStatus() != null) {
+            set(changed, "employmentStatus", e.getEmploymentStatus(), u.employmentStatus(), e::setEmploymentStatus);
+        } else {
+            set(changed, "civilServant", e.isCivilServant(), u.civilServant(), e::setCivilServant);
+        }
         set(changed, "civilServiceGrade", e.getCivilServiceGrade(), u.civilServiceGrade(), e::setCivilServiceGrade);
         set(changed, "appointmentYear", e.getAppointmentYear(), u.appointmentYear(), e::setAppointmentYear);
         set(changed, "lastGradeDate", e.getLastGradeDate(), u.lastGradeDate(), e::setLastGradeDate);
+        set(changed, "jobDescription", e.getJobDescription(), trim(u.jobDescription()), e::setJobDescription);
+        if (u.employmentStartDate() != null && u.employmentStartDate().isAfter(LocalDate.now(clock))) {
+            throw new RuleViolationException(List.of("Data nawiązania stosunku pracy nie może być z przyszłości"));
+        }
+        set(changed, "employmentStartDate", e.getEmploymentStartDate(), u.employmentStartDate(),
+                e::setEmploymentStartDate);
         if (changed.contains("firstName") || changed.contains("lastName")) {
             String full = ((e.getFirstName() == null ? "" : e.getFirstName()) + " "
                     + (e.getLastName() == null ? "" : e.getLastName())).trim();
@@ -207,6 +230,7 @@ public class HrService {
         e.setAppointmentYear(null);
         e.setCivilServiceGrade(null);
         e.setLastGradeDate(null);
+        e.setJobDescription(null);
         e.setSupervisorId(null);
         e.setActive(false);
         audit.log(hr, hr.getOfficeId(), "EMPLOYEE_ANONYMIZED", AuditService.USER, employeeId,
@@ -269,9 +293,14 @@ public class HrService {
         return new HandoverResult(employee.getId(), previous, newEvaluator.getId(), cycleIds, notesCount);
     }
 
-    /** CSV: full_name,email,role,is_civil_servant[,supervisor_email] — separator , lub ; nagłówek opcjonalny. */
+    /** CSV: full_name,email,role,is_civil_servant|employment_status[,supervisor_email] — separator , lub ; nagłówek opcjonalny. */
     public ImportResult importCsv(User hr, InputStream csv) throws IOException {
         requireRole(hr, Role.HR);
+        return importInto(hr, hr.getOfficeId(), csv);
+    }
+
+    /** Import do wskazanego urzędu — uprawnienia sprawdza wywołujący (kadry: własny urząd, admin KPRM: dowolny). */
+    ImportResult importInto(User actor, Long officeId, InputStream csv) throws IOException {
         List<String> skipped = new ArrayList<>();
         List<String> errors = new ArrayList<>();
         int imported = 0;
@@ -285,7 +314,7 @@ public class HrService {
                 }
                 String[] cols = line.split(line.contains(";") ? ";" : ",", -1);
                 try {
-                    User user = parseRow(hr, cols);
+                    User user = parseRow(officeId, cols);
                     if (users.existsByEmailIgnoreCase(user.getEmail())) {
                         skipped.add("Wiersz " + lineNo + ": " + user.getEmail() + " już istnieje");
                         continue;
@@ -297,7 +326,7 @@ public class HrService {
                 }
             }
         }
-        audit.log(hr, hr.getOfficeId(), "EMPLOYEES_IMPORTED", AuditService.USER, null,
+        audit.log(actor, officeId, "EMPLOYEES_IMPORTED", AuditService.USER, null,
                 Map.of("imported", imported, "skipped", skipped.size(), "errors", errors.size()));
         return new ImportResult(imported, skipped, errors);
     }
@@ -319,7 +348,7 @@ public class HrService {
         return export;
     }
 
-    private User parseRow(User hr, String[] cols) {
+    private User parseRow(Long officeId, String[] cols) {
         if (cols.length < 4) {
             throw new IllegalArgumentException("oczekiwano min. 4 kolumn");
         }
@@ -338,21 +367,36 @@ public class HrService {
             throw new IllegalArgumentException("rola " + role + " nie może być nadana importem");
         }
         User user = new User();
-        user.setOfficeId(hr.getOfficeId());
+        user.setOfficeId(officeId);
         user.setFullName(name);
         int space = name.indexOf(' ');
         user.setFirstName(space > 0 ? name.substring(0, space) : name);
         user.setLastName(space > 0 ? name.substring(space + 1) : null);
         user.setEmail(email);
         user.setRole(role);
-        user.setCivilServant(Boolean.parseBoolean(cols[3].trim()) || "tak".equalsIgnoreCase(cols[3].trim()));
+        user.setEmploymentStatus(employmentStatus(cols[3].trim()));
         if (cols.length > 4 && !cols[4].isBlank()) {
             User supervisor = users.findByEmailIgnoreCase(cols[4].trim())
-                    .filter(s -> s.getOfficeId().equals(hr.getOfficeId()))
+                    .filter(s -> s.getOfficeId().equals(officeId))
                     .orElseThrow(() -> new IllegalArgumentException("nieznany przełożony " + cols[4].trim()));
             user.setSupervisorId(supervisor.getId());
         }
         return user;
+    }
+
+    /** Kolumna 4: nazwa statusu (np. PRACOWNIK_SC_OKRESLONY) albo dawna flaga true/tak = urzędnik SC. */
+    static EmploymentStatus employmentStatus(String value) {
+        if (Boolean.parseBoolean(value) || "tak".equalsIgnoreCase(value)) {
+            return EmploymentStatus.URZEDNIK_SC;
+        }
+        if (value.isEmpty() || "false".equalsIgnoreCase(value) || "nie".equalsIgnoreCase(value)) {
+            return EmploymentStatus.PRACOWNIK_SC_NIEOKRESLONY;
+        }
+        try {
+            return EmploymentStatus.valueOf(value.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("nieznany status zatrudnienia " + value);
+        }
     }
 
     private LocalDate recalculateDue(EvaluationCycle cycle, List<AbsencePeriod> periods) {

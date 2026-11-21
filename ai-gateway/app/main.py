@@ -152,6 +152,8 @@ class SuggestCriteriaRequest(BaseModel):
     sheet_type: Literal["A", "B", "C"]
     mandatory_codes: List[str] = Field(default_factory=list)
     responsibilities_summary: str = ""
+    # opis stanowiska pracy z profilu pracownika (art. 84) — wstrzykiwany przez backend-core
+    job_description: str = ""
 
 
 class CriterionSuggestion(BaseModel):
@@ -200,4 +202,4 @@ def interview_prep(req: InterviewPrepRequest) -> Dict:
 @app.post("/api/ai/suggest-criteria", response_model=SuggestCriteriaResponse)
 def suggest_criteria(req: SuggestCriteriaRequest) -> Dict:
     return criteria_suggest.suggest_criteria(llm, req.position_title, req.department, req.sheet_type,
-                                             req.mandatory_codes, req.responsibilities_summary)
+                                             req.mandatory_codes, req.responsibilities_summary, req.job_description)

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { RoleGate } from "@/components/RoleGate";
+import { SmallOfficeAccounts } from "@/components/admin/SmallOfficeAccounts";
 import { Alert, Badge, Button, Card, Field, inputClass, ProblemAlert, Spinner } from "@/components/ui";
 import { useUser } from "@/components/UserProvider";
 import { api, download } from "@/lib/api";
@@ -51,7 +52,10 @@ interface Draft {
 export default function AdminPage() {
   return (
     <RoleGate roles={["KPRM_ADMIN"]}>
-      <SchemaAdmin />
+      <div className="space-y-6">
+        <SchemaAdmin />
+        <SmallOfficeAccounts />
+      </div>
     </RoleGate>
   );
 }

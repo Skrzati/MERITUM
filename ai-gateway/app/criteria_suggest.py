@@ -74,17 +74,20 @@ EXPECTATIONS: Dict[str, List[str]] = {
 
 
 def suggest_criteria(llm: LLMClient, position_title: str, department: str, sheet_type: str,
-                     mandatory_codes: List[str], responsibilities_summary: str) -> Dict:
+                     mandatory_codes: List[str], responsibilities_summary: str, job_description: str = "") -> Dict:
     masker = PiiMasker(known_units=[department] if department else [])
     masked_title = masker.mask(position_title)
     masked_department = masker.mask(department)
     masked_summary = masker.mask(responsibilities_summary)
+    masked_job = masker.mask(job_description)
     mandatory = {c.upper() for c in mandatory_codes}
     available = {code: name for code, name in CRITERIA.items() if code not in mandatory}
     catalog_lines = "\n".join(f"- {code}: {name}" for code, name in available.items())
     prompt = (f"Stanowisko: {masked_title}\nKomórka: {masked_department or '(brak)'}\nArkusz: {sheet_type}\n"
               f"Kryteria obowiązkowe (nie proponuj): {', '.join(sorted(mandatory)) or '(brak)'}\n"
-              f"Zakres obowiązków: {masked_summary or '(brak opisu)'}\nKatalog kryteriów do wyboru:\n{catalog_lines}\n"
+              f"Zakres obowiązków: {masked_summary or '(brak opisu)'}\n"
+              f"Opis stanowiska pracy (art. 84 ustawy o służbie cywilnej): {masked_job or '(brak opisu)'}\n"
+              f"Katalog kryteriów do wyboru:\n{catalog_lines}\n"
               "Zaproponuj maksymalnie 3 kryteria dodatkowe z uzasadnieniem i oczekiwaniami.")
 
     answer = llm.chat_json(SUGGEST_SYSTEM, prompt)
@@ -93,7 +96,7 @@ def suggest_criteria(llm: LLMClient, position_title: str, department: str, sheet
         mode = llm.mode
     else:
         mode = MODE_MOCK if llm.mode == MODE_MOCK else MODE_FALLBACK
-        suggestions = _mock(f"{position_title} {department} {responsibilities_summary}", available)
+        suggestions = _mock(f"{position_title} {department} {responsibilities_summary} {job_description}", available)
 
     unmask = lambda s: unmask_pii(str(s), masker.mapping)  # noqa: E731
     return {

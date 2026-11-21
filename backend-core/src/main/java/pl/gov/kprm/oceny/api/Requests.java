@@ -8,6 +8,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import pl.gov.kprm.oceny.domain.CycleStatus;
 import pl.gov.kprm.oceny.domain.DgDecision;
+import pl.gov.kprm.oceny.domain.EmploymentStatus;
 import pl.gov.kprm.oceny.domain.IprzItem;
 import pl.gov.kprm.oceny.domain.RescheduleMode;
 import pl.gov.kprm.oceny.domain.Role;
@@ -49,8 +50,10 @@ public final class Requests {
 
     public record UpdateEmployeeRequest(@Size(max = 100) String firstName, @Size(max = 150) String lastName,
                                         @Size(max = 255) String department, @Size(max = 255) String positionTitle,
-                                        Role role, Boolean civilServant, Integer civilServiceGrade,
-                                        Integer appointmentYear, LocalDate lastGradeDate, Long supervisorId) {
+                                        Role role, Boolean civilServant, EmploymentStatus employmentStatus,
+                                        Integer civilServiceGrade,
+                                        Integer appointmentYear, LocalDate lastGradeDate, Long supervisorId,
+                                        @Size(max = 10000) String jobDescription, LocalDate employmentStartDate) {
     }
 
     public record HistoryRequest(@NotNull EvaluationOutcome outcome, @NotNull PerformanceLevel level,
@@ -114,6 +117,12 @@ public final class Requests {
     public record AppealRequest(@NotBlank String content) {
     }
 
+    public record CourtAppealRequest(@NotNull LocalDate filedOn, @Size(max = 100) String caseReference) {
+    }
+
+    public record CourtAppealCloseRequest(@NotBlank @Size(max = 2000) String outcome) {
+    }
+
     public record AppealDecisionRequest(@NotNull DgDecision decision, String comment, Map<String, Integer> scores,
                                         String justification, String iprzNotes) {
     }
@@ -133,6 +142,28 @@ public final class Requests {
     }
 
     public record GovLoginRequest(@NotNull Long userId) {
+    }
+
+    /** Konto lokalne (tryb Mały Urząd): login = adres e-mail konta. */
+    public record LocalLoginRequest(@NotBlank @Size(max = 255) String login, @NotBlank @Size(max = 128) String password) {
+    }
+
+    public record SetPasswordRequest(@NotBlank @Size(max = 128) String password) {
+    }
+
+    /** Ręczne dodanie konta (/admin): officeId wymagany dla administratora KPRM, kadry — zawsze własny urząd. */
+    public record CreateAccountRequest(Long officeId, @NotBlank @Size(max = 100) String firstName,
+                                       @NotBlank @Size(max = 150) String lastName,
+                                       @NotBlank @Size(max = 255) String email, @NotNull Role role,
+                                       EmploymentStatus employmentStatus, Long supervisorId,
+                                       @Size(max = 255) String department, @Size(max = 255) String positionTitle,
+                                       @Size(max = 128) String password) {
+    }
+
+    public record SurveyQuestionRequest(@NotBlank @Size(max = 500) String text) {
+    }
+
+    public record SurveyAnswersRequest(@NotNull Map<String, @Size(max = 5000) String> answers) {
     }
 
     public record AbsenceRequest(@NotNull Long userId, @NotNull LocalDate startDate, @NotNull LocalDate endDate,
