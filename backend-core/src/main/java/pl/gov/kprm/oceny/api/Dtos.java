@@ -41,9 +41,10 @@ public final class Dtos {
                            LocalDate appealDeadline, String appealText, OffsetDateTime appealedAt,
                            LocalDate appealDecisionDeadline, DgDecision dgDecision, String dgComment,
                            OffsetDateTime dgDecidedAt, boolean mandatoryGradeEligible,
-                           LocalDate mandatoryGradeDeadline) {
+                           LocalDate mandatoryGradeDeadline, String delayReason, SignatureMethod signatureMethod,
+                           long overdueDays) {
         public static CycleDto of(EvaluationCycle c, LocalDate criteriaDeadline, boolean gradeEligible,
-                                  LocalDate gradeDeadline) {
+                                  LocalDate gradeDeadline, long overdueDays) {
             return new CycleDto(c.getId(), c.getOfficeId(), c.getEmployeeId(), c.getEvaluatorId(),
                     c.getSchemaVersionId(), c.getSheetType(), c.getStatus(), c.isReevaluation(), c.getStartDate(),
                     c.getDueDate(), criteriaDeadline, c.getCriteriaInterviewDate(), c.getCriteriaConfirmedOn(),
@@ -52,11 +53,12 @@ public final class Dtos {
                     c.getResultExplanation(), c.getJustification(), c.getIprzNotes(), c.getGradeRequestJson(),
                     c.getAcknowledgedAt(), c.getRefusalReason(), c.getRefusalDate(), c.getAppealDeadline(),
                     c.getAppealText(), c.getAppealedAt(), c.getAppealDecisionDeadline(), c.getDgDecision(),
-                    c.getDgComment(), c.getDgDecidedAt(), gradeEligible, gradeDeadline);
+                    c.getDgComment(), c.getDgDecidedAt(), gradeEligible, gradeDeadline, c.getDelayReason(),
+                    c.getSignatureMethod(), overdueDays);
         }
 
         public static CycleDto of(EvaluationCycle c) {
-            return of(c, null, false, null);
+            return of(c, null, false, null, 0);
         }
     }
 

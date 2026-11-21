@@ -16,6 +16,8 @@ import pl.gov.kprm.oceny.domain.User;
 import pl.gov.kprm.oceny.service.HrService;
 import pl.gov.kprm.oceny.service.HrService.HandoverResult;
 import pl.gov.kprm.oceny.service.HrService.ImportResult;
+import pl.gov.kprm.oceny.service.OverdueService;
+import pl.gov.kprm.oceny.service.OverdueService.OverdueItem;
 
 import java.io.IOException;
 import java.util.List;
@@ -26,6 +28,13 @@ import java.util.List;
 public class HrController {
     private final HrService hr;
     private final CycleMapper mapper;
+    private final OverdueService overdue;
+
+    /** Aktywne cykle po terminie (HR, DG) — malejąco wg liczby dni opóźnienia, z poziomem eskalacji. */
+    @GetMapping("/overdue")
+    public List<OverdueItem> overdue(@CurrentUser User user) {
+        return overdue.overdue(user);
+    }
 
     @GetMapping("/employees")
     public List<UserDto> employees(@CurrentUser User user,

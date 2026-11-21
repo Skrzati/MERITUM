@@ -4,6 +4,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.util.HtmlUtils;
 import pl.gov.kprm.oceny.domain.EvaluationCycle;
 import pl.gov.kprm.oceny.domain.EvaluationHistory;
+import pl.gov.kprm.oceny.domain.SignatureMethod;
 import pl.gov.kprm.oceny.domain.User;
 import pl.gov.kprm.oceny.rules.Criterion;
 import pl.gov.kprm.oceny.rules.EvaluationOutcome;
@@ -27,6 +28,7 @@ public class SheetHtmlRenderer {
             + "warunków i sposobu przeprowadzania ocen okresowych urzędników służby cywilnej i pracowników służby cywilnej "
             + "(Dz. U. poz. 470)";
     private static final String ACT = "ustawy z dnia 21 listopada 2008 r. o służbie cywilnej";
+    static final String QES_NOTE = "Podpis kwalifikowany (mObywatel QES / eIDAS 2.0)";
     private static final List<String[]> SCALE_HEADERS = List.of(
             new String[]{"Znacznie poniżej oczekiwań", "1 punkt"}, new String[]{"Poniżej oczekiwań", "3 punkty"},
             new String[]{"Na poziomie oczekiwań", "5 punktów"}, new String[]{"Powyżej oczekiwań", "7 punktów"},
@@ -64,6 +66,7 @@ public class SheetHtmlRenderer {
             .note { font-size: 8.5pt; border: 1px solid #000; padding: 5px; margin-top: 8px; }
             .muted { color: #555; }
             .refusal { font-style: italic; }
+            .qes { font-weight: bold; border: 1px solid #000; padding: 4px 6px; display: inline-block; }
             footer { margin-top: 14px; font-size: 7.5pt; color: #444; text-align: right; }
             """;
 
@@ -167,6 +170,13 @@ public class SheetHtmlRenderer {
                     .append(date(c.getAcknowledgedAt())).append("</b>data (dd.mm.rrrr)</div><div><b>")
                     .append(c.getAcknowledgedAt() != null ? esc(d.employee().getFullName()) : EMPTY)
                     .append("</b>imię i nazwisko lub pieczątka ocenianego</div><div><b>&nbsp;</b>podpis ocenianego</div></div>");
+        }
+        if (c.getSignatureMethod() == SignatureMethod.MOBYWATEL_QES) {
+            h.append("<p class=\"qes\">✔ ").append(QES_NOTE).append("</p>");
+        }
+        if (c.getDelayReason() != null && !c.getDelayReason().isBlank()) {
+            h.append("<p class=\"muted\">Ocena sporządzona po terminie — przyczyna: ").append(esc(c.getDelayReason()))
+                    .append("</p>");
         }
         h.append("<div class=\"note\"><b>Pouczenie</b><br>Na podstawie art. 83 ust. 1 ").append(ACT)
                 .append(" od oceny okresowej służy, w terminie 7 dni od dnia zapoznania się z oceną, sprzeciw do ")

@@ -11,6 +11,7 @@ import pl.gov.kprm.oceny.repository.SchemaVersionRepository;
 import pl.gov.kprm.oceny.rules.CriteriaCatalog;
 
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -22,6 +23,8 @@ import static pl.gov.kprm.oceny.service.Access.requireRole;
 @Transactional
 @RequiredArgsConstructor
 public class SchemaAdminService {
+    public static final String RULE_PACKAGE_FORMAT = "meritum-rules/1";
+
     private final SchemaVersionRepository schemas;
     private final AuditService audit;
 
@@ -35,6 +38,20 @@ public class SchemaAdminService {
     @Transactional(readOnly = true)
     public SchemaVersion get(Long id) {
         return schemas.findById(id).orElseThrow(() -> Access.notFound("Schemat", id));
+    }
+
+    /** Pakiet reguł („prawo jako kod”) do przeniesienia między instalacjami w urzędach. */
+    @Transactional(readOnly = true)
+    public Map<String, Object> rulePackage(User admin, Long id) {
+        requireRole(admin, Role.KPRM_ADMIN);
+        SchemaVersion s = get(id);
+        Map<String, Object> pkg = new LinkedHashMap<>();
+        pkg.put("format", RULE_PACKAGE_FORMAT);
+        pkg.put("versionCode", s.getVersionCode());
+        pkg.put("effectiveFrom", s.getEffectiveFrom());
+        pkg.put("periodMonths", s.getPeriodMonths());
+        pkg.put("config", s.getConfigJson());
+        return pkg;
     }
 
     public SchemaVersion create(User admin, String versionCode, LocalDate effectiveFrom, int periodMonths,

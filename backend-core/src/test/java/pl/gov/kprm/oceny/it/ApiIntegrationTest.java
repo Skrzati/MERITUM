@@ -14,6 +14,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.nio.charset.StandardCharsets;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -65,8 +67,8 @@ class ApiIntegrationTest {
                  "config": %s}""".formatted(fetch("/api/schemas/1", HR).path("config"));
         JsonNode schema = send(post("/api/admin/schemas"), ADMIN, v2, 201);
 
-        // pracownik bez aktywnego cyklu (cykl 4 zakończony) -> nowy cykl na v2, 12 miesięcy
-        JsonNode cycle = send(post("/api/cycles"), HR, "{\"employeeId\": 8, \"startDate\": \"2026-11-23\"}", 201);
+        // pracownik bez aktywnego cyklu (cykl 5 zakończony) -> nowy cykl na v2, 12 miesięcy
+        JsonNode cycle = send(post("/api/cycles"), HR, "{\"employeeId\": 9, \"startDate\": \"2026-11-23\"}", 201);
         assertThat(cycle.path("schemaVersionId").asLong()).isEqualTo(schema.path("id").asLong());
         assertThat(cycle.path("dueDate").asText()).isEqualTo("2027-11-23");
         assertThat(cycle.path("criteriaDeadline").asText()).isEqualTo("2026-12-23");
@@ -106,10 +108,61 @@ class ApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(header().string("X-Frame-Options", "DENY"))
                 .andExpect(header().string("X-Content-Type-Options", "nosniff"))
-                .andReturn().getResponse().getContentAsString();
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
         assertThat(json.readTree(body).path("id").asLong()).isEqualTo(TOMASZ);
         mvc.perform(get("/api/auth/me").header("Authorization", "Bearer " + token + "x"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void overdueListIsSortedAndEscalated() throws Exception {
+        JsonNode overdue = fetch("/api/hr/overdue", DG);
+        // cykl 17 (37 dni po terminie) nie jest modyfikowany przez inne testy
+        assertThat(overdue.get(0).path("cycleId").asLong()).isEqualTo(17);
+        assertThat(overdue.get(0).path("escalationLevel").asText()).isEqualTo("DYREKTOR_GENERALNY");
+        for (int i = 1; i < overdue.size(); i++) {
+            assertThat(overdue.get(i - 1).path("overdueDays").asLong()).isGreaterThanOrEqualTo(overdue.get(i).path("overdueDays").asLong());
+        }
+        assertThat(fetch("/api/cycles/17", HR).path("overdueDays").asLong()).isPositive();
+        mvc.perform(withUser(get("/api/hr/overdue"), EMPLOYEE)).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void lateEvaluationIsNotBlockedAndRecordsDelayReason() throws Exception {
+        JsonNode res = send(put("/api/cycles/16/evaluate"), EVALUATOR, """
+                {"scores": {"K10": 5, "K08": 5, "K04": 5, "K11": 5, "K01": 5}, "iprzNotes": "IPRZ",
+                 "delayReason": "Długotrwała nieobecność oceniającego", "signatureMethod": "MOBYWATEL_QES",
+                 "submit": true}""", 200);
+        assertThat(res.path("cycle").path("status").asText()).isEqualTo("AWAITING_ACK");
+        assertThat(res.path("cycle").path("delayReason").asText()).contains("nieobecność");
+        assertThat(res.path("cycle").path("signatureMethod").asText()).isEqualTo("MOBYWATEL_QES");
+        assertThat(fetch("/api/audit-logs?limit=10", HR).toString()).contains("EVALUATION_OVERDUE");
+    }
+
+    @Test
+    void notificationsAreComputedForVisibleCycles() throws Exception {
+        String hr = fetch("/api/notifications", HR).toString();
+        assertThat(hr).contains("OVERDUE", "CRITERIA_DUE", "APPEAL_DECISION_DUE", "MANDATORY_GRADE_DUE");
+        String employee = fetch("/api/notifications", 7).toString();
+        assertThat(employee).contains("MANDATORY_GRADE_DUE").doesNotContain("APPEAL_DECISION_DUE");
+    }
+
+    @Test
+    void nextCycleAfterNegativeIsSixMonthReevaluation() throws Exception {
+        // cykl 9: ocena negatywna Krawczyk (id 13), zapoznanie 2026-08-21
+        JsonNode next = send(post("/api/cycles/9/next"), EVALUATOR, "{}", 201);
+        assertThat(next.path("reevaluation").asBoolean()).isTrue();
+        assertThat(next.path("startDate").asText()).isEqualTo("2026-08-21");
+        assertThat(next.path("dueDate").asText()).isEqualTo("2027-02-22");
+        mvc.perform(withUser(post("/api/cycles/1/next"), HR)).andExpect(status().isConflict());
+    }
+
+    @Test
+    void rulePackageIsDownloadableForKprmAdmin() throws Exception {
+        mvc.perform(withUser(get("/api/admin/schemas/1/package"), ADMIN))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.containsString("meritum-rules-v1.json")));
+        mvc.perform(withUser(get("/api/admin/schemas/1/package"), HR)).andExpect(status().isForbidden());
     }
 
     @Test
@@ -131,14 +184,14 @@ class ApiIntegrationTest {
 
     private JsonNode fetch(String path, long userId) throws Exception {
         String body = mvc.perform(withUser(get(path), userId)).andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
         return json.readTree(body);
     }
 
     private JsonNode send(MockHttpServletRequestBuilder req, Long userId, String body, int expected) throws Exception {
         MockHttpServletRequestBuilder r = req.contentType(MediaType.APPLICATION_JSON).content(body);
         String res = mvc.perform(userId == null ? r : withUser(r, userId)).andExpect(status().is(expected))
-                .andReturn().getResponse().getContentAsString();
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
         return json.readTree(res);
     }
 

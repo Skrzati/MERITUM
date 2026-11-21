@@ -77,7 +77,7 @@ public class CycleWorkflowService {
             throw conflict("Pracownik ma już aktywny cykl oceny");
         }
         LocalDate start = startDate != null ? startDate : LocalDate.now(clock);
-        SchemaVersion schema = schemas.findFirstByEffectiveFromLessThanEqualOrderByEffectiveFromDescIdDesc(start)
+        SchemaVersion schema = schemas.findFirstByEffectiveFromLessThanEqualOrderByEffectiveFromDescIdDesc(LocalDate.now(clock))
                 .orElseThrow(() -> conflict("Brak obowiązującej wersji schematu oceny"));
         List<AbsencePeriod> periods = absences.findByUserIdOrderByStartDateAsc(employeeId).stream()
                 .map(a -> new AbsencePeriod(a.getStartDate(), a.getEndDate())).toList();
@@ -100,6 +100,24 @@ public class CycleWorkflowService {
                         "periodMonths", schema.getPeriodMonths(), "dueDate", saved.getDueDate(),
                         "reevaluation", reevaluation));
         return saved;
+    }
+
+    /** Kolejny cykl po zakończonej ocenie (HR lub oceniający) — na najnowszej wersji schematu. */
+    public EvaluationCycle next(Long id, User user) {
+        EvaluationCycle previous = load(id);
+        requireStatus(previous, CycleStatus.COMPLETED);
+        boolean hr = user.getRole() == Role.HR && user.getOfficeId().equals(previous.getOfficeId());
+        if (!hr && !user.getId().equals(previous.getEvaluatorId())) {
+            throw forbidden("Kolejny cykl uruchamia kadra lub oceniający");
+        }
+        NextCycleRules.Plan plan = NextCycleRules.plan(previous.getFinalResult(), previous.getEvaluatedOn(),
+                previous.getAcknowledgedAt(), LocalDate.now(clock));
+        EvaluationCycle next = create(user, previous.getEmployeeId(), previous.getSheetType(), plan.startDate(),
+                plan.reevaluation());
+        audit.log(user, next.getOfficeId(), "NEXT_CYCLE_CREATED", AuditService.CYCLE, next.getId(),
+                payload("previousCycleId", previous.getId(), "previousOutcome", previous.getFinalResult(),
+                        "reevaluation", plan.reevaluation(), "dueDate", next.getDueDate()));
+        return next;
     }
 
     public EvaluationCycle setCriteria(Long id, User user, List<Criterion> requested, LocalDate interviewDate) {
@@ -160,7 +178,7 @@ public class CycleWorkflowService {
 
     public EvaluationResult evaluate(Long id, User user, Map<String, Integer> scores, String justification,
                                      String iprzNotes, GradeRequest gradeRequest, LocalDate interviewDate,
-                                     boolean submit) {
+                                     boolean submit, String delayReason, SignatureMethod signatureMethod) {
         EvaluationCycle cycle = asEvaluator(id, user);
         cycle.setScoresJson(json.valueToTree(scores));
         cycle.setJustification(justification);
@@ -169,6 +187,12 @@ public class CycleWorkflowService {
         if (interviewDate != null) {
             cycle.setEvaluationInterviewDate(interviewDate);
         }
+        if (delayReason != null && !delayReason.isBlank()) {
+            cycle.setDelayReason(delayReason.trim());
+        }
+        if (signatureMethod != null) {
+            cycle.setSignatureMethod(signatureMethod);
+        }
         if (!submit) {
             engine.validateScale(scores);
             transition(cycle, user, CycleStatus.EVALUATION_DRAFT, "EVALUATION_DRAFT_SAVED", Map.of());
@@ -176,6 +200,13 @@ public class CycleWorkflowService {
         }
         EvaluationResult result = assessOrThrow(cycle, scores, justification, iprzNotes, gradeRequest);
         LocalDate today = LocalDate.now(clock);
+        long overdueDays = OverdueRules.overdueDays(cycle.getDueDate(), today, true);
+        if (overdueDays > 0) {
+            // ustalenie z KPRM: termin nie blokuje sporządzenia oceny — opóźnienie jest rejestrowane
+            audit.log(user, cycle.getOfficeId(), "EVALUATION_OVERDUE", AuditService.CYCLE, cycle.getId(),
+                    payload("dueDate", cycle.getDueDate(), "overdueDays", overdueDays,
+                            "delayReason", cycle.getDelayReason()));
+        }
         cycle.setEvaluatedOn(today);
         if (cycle.getEvaluationInterviewDate() == null) {
             cycle.setEvaluationInterviewDate(today);
@@ -185,13 +216,14 @@ public class CycleWorkflowService {
         return result;
     }
 
-    public EvaluationCycle acknowledge(Long id, User user) {
+    public EvaluationCycle acknowledge(Long id, User user, SignatureMethod signatureMethod) {
         EvaluationCycle cycle = asEmployee(id, user);
         LocalDate today = LocalDate.now(clock);
         cycle.setAcknowledgedAt(today);
         cycle.setAppealDeadline(deadlines.appealDeadline(today));
+        cycle.setSignatureMethod(signatureMethod != null ? signatureMethod : SignatureMethod.SYSTEM_DEMO);
         transition(cycle, user, CycleStatus.COMPLETED, "EVALUATION_ACKNOWLEDGED",
-                Map.of("appealDeadline", cycle.getAppealDeadline()));
+                Map.of("appealDeadline", cycle.getAppealDeadline(), "signatureMethod", cycle.getSignatureMethod()));
         history.recordCompleted(cycle);
         return cycle;
     }

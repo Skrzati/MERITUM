@@ -62,4 +62,7 @@ public class EvaluationCycle {
     private LocalDate evaluatedOn;
     private String place;
     private LocalDate appealDecisionDeadline;
+    private String delayReason;
+    @Enumerated(EnumType.STRING)
+    private SignatureMethod signatureMethod;
 }

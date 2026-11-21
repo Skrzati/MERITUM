@@ -72,13 +72,22 @@ public class CycleController {
     public EvaluationResponse evaluate(@PathVariable Long id, @CurrentUser User user,
                                        @Valid @RequestBody EvaluateRequest req) {
         EvaluationResult result = workflow.evaluate(id, user, req.scores(), req.justification(), req.iprzNotes(),
-                req.gradeRequest(), req.evaluationInterviewDate(), req.submit());
+                req.gradeRequest(), req.evaluationInterviewDate(), req.submit(), req.delayReason(),
+                req.signatureMethod());
         return new EvaluationResponse(mapper.toDto(workflow.get(id, user)), result);
     }
 
     @PostMapping("/{id}/acknowledge")
-    public CycleDto acknowledge(@PathVariable Long id, @CurrentUser User user) {
-        return mapper.toDto(workflow.acknowledge(id, user));
+    public CycleDto acknowledge(@PathVariable Long id, @CurrentUser User user,
+                                @RequestBody(required = false) AcknowledgeRequest req) {
+        return mapper.toDto(workflow.acknowledge(id, user, req == null ? null : req.signatureMethod()));
+    }
+
+    /** Kolejny cykl po zakończonej ocenie: po negatywnej ponowna ocena (6 mies.), po pozytywnej zwykły cykl. */
+    @PostMapping("/{id}/next")
+    @ResponseStatus(HttpStatus.CREATED)
+    public CycleDto next(@PathVariable Long id, @CurrentUser User user) {
+        return mapper.toDto(workflow.next(id, user));
     }
 
     @PostMapping("/{id}/refusal")

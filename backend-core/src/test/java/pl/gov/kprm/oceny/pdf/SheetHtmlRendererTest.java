@@ -66,6 +66,16 @@ class SheetHtmlRendererTest {
     }
 
     @Test
+    void qualifiedSignatureAndDelayReasonAreAnnotated() {
+        SheetData d = data(true, null);
+        assertThat(renderer.render(d)).doesNotContain("mObywatel QES");
+        d.cycle().setSignatureMethod(SignatureMethod.MOBYWATEL_QES);
+        d.cycle().setDelayReason("Długotrwałe zwolnienie oceniającego");
+        assertThat(renderer.render(d)).contains("Podpis kwalifikowany (mObywatel QES / eIDAS 2.0)",
+                "po terminie — przyczyna: Długotrwałe zwolnienie oceniającego");
+    }
+
+    @Test
     void escapesUserContent() {
         String html = renderer.render(positive(data(true, GRADE)));
 

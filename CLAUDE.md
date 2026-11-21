@@ -19,12 +19,13 @@
 │       ├── java/pl/gov/kprm/oceny/
 │       │   ├── config/       # AppConfig (Clock Europe/Warsaw)
 │       │   ├── domain/       # encje JPA + enumy (CycleStatus z mapą przejść, DgDecision, RescheduleMode/Status,
-│       │   │                 #   ScopeChangeOutcome, HistorySource); EvaluationHistory, WellbeingSurvey, ScopeChange, RescheduleRequest
+│       │   │                 #   ScopeChangeOutcome, HistorySource, SignatureMethod, EscalationLevel); EvaluationHistory, WellbeingSurvey, ScopeChange, RescheduleRequest
 │       │   ├── rules/        # czysta logika prawa, bez I/O: DeadlineService, EvaluationRuleEngine, CriteriaCatalog,
-│       │   │                 #   GradeRules (art. 89 ust. 2), RescheduleRules (art. 81 ust. 8), AnonymizedCount (k-anonimowość)
+│       │   │                 #   GradeRules (art. 89 ust. 2), RescheduleRules (art. 81 ust. 8), AnonymizedCount (k-anonimowość),
+│       │   │                 #   OverdueRules (dni po terminie + eskalacja), NextCycleRules (kolejny cykl)
 │       │   ├── service/      # CycleWorkflowService, EvaluationHistoryService, RescheduleService, ScopeChangeService,
 │       │   │                 #   WellbeingService, HrService, SchemaAdminService, StatsService, PdfExportService,
-│       │   │                 #   AiProxyService (audyt AI), AuditService, Access (autoryzacja)
+│       │   │                 #   AiProxyService (audyt AI), OverdueService, NotificationService, AuditService, Access
 │       │   ├── pdf/          # SheetHtmlRenderer (wzór arkusza A/B/C 1:1), GotenbergClient (HTML -> PDF/A-2b)
 │       │   ├── repository/   # Spring Data JPA
 │       │   ├── auth/         # JwtService (HS256), CurrentUserFilter (Bearer JWT / X-Demo-User-Id), SecurityHeadersFilter,
@@ -34,7 +35,8 @@
 │           ├── application.yml          # konfiguracja przez env (DB_*, GOTENBERG_URL, AI_GATEWAY_URL, JWT_SECRET,
 │           │                            #   DEMO_HEADER_ENABLED, STATS_K_ANONYMITY)
 │           └── db/migration/            # Flyway: V1 schemat, V2 seed, V3 workflow + absences, V4 kryteria v1 (§ 4),
-│                                        #   V5 pola wzoru KPRM + historia/dobrostan/zakres/terminy + opisy kryteriów + seed demo
+│                                        #   V5 pola wzoru KPRM + historia/dobrostan/zakres/terminy + opisy kryteriów + seed demo,
+│                                        #   V6 delay_reason + signature_method + 2 cykle po terminie (ustalenia z mentorami)
 │   └── src/test/                        # JUnit 5: rules/, pdf/, auth/, service/ (jednostkowe) + it/ApiIntegrationTest
 │                                        #   (Testcontainers PostgreSQL: migracje V1–V5, walidacja JPA, scenariusze API);
 │                                        #   resources/docker-java.properties (api.version=1.44 dla Docker Engine 29+)
@@ -82,19 +84,23 @@ Błędy: 403 brak uprawnień, 404 brak zasobu, 409 niedozwolone przejście stanu
 | GET | `/api/health` | wszyscy | status |
 | GET | `/api/auth/demo-users`, `/api/auth/me` | wszyscy | logowanie demo |
 | POST | `/api/auth/gov-login` | wszyscy | `{"userId"}` → `{accessToken, tokenType: "Bearer", expiresIn, identityProvider, user}` |
-| GET | `/api/cycles`, `/api/cycles/{id}` | wg roli | KPRM_ADMIN wszystko; HR/DG urząd; strony cyklu; pola `criteriaDeadline`, `mandatoryGradeEligible`, `mandatoryGradeDeadline` |
+| GET | `/api/cycles`, `/api/cycles/{id}` | wg roli | KPRM_ADMIN wszystko; HR/DG urząd; strony cyklu; pola `criteriaDeadline`, `mandatoryGradeEligible`, `mandatoryGradeDeadline`, `overdueDays`, `delayReason`, `signatureMethod` |
 | POST | `/api/cycles` | HR / bezpośredni przełożony | `{employeeId, sheetType?, startDate?, reevaluation?}` — **zawsze najnowsza obowiązująca wersja schematu**, termin z jej `period_months` (6 mies. przy ponownej ocenie) |
+| POST | `/api/cycles/{id}/next` | HR / oceniający | tylko z `COMPLETED`: po NEGATIVE ponowna ocena (`startDate = acknowledgedAt`, +6 mies.), po POSITIVE zwykły cykl od daty oceny; zawsze najnowszy schemat |
 | POST | `/api/cycles/{id}/criteria` | oceniający | `{"additional":[{"code":"K07"}], "interviewDate"?}` — obowiązkowe wg arkusza + 0–3 z katalogu (status DRAFT_CRITERIA) |
 | POST | `/api/cycles/{id}/confirm-criteria` | oceniany | → OBSERVATION (kryteria zablokowane) |
 | GET/POST | `/api/cycles/{id}/notes` | oceniający (POST); oceniany widzi swoje + `isSharedAfterEval` po ocenie | |
-| PUT | `/api/cycles/{id}/evaluate` | oceniający | `submit=false` → EVALUATION_DRAFT; `submit=true` → walidacja § 11 → AWAITING_ACK (+ `evaluationInterviewDate`) |
-| POST | `/api/cycles/{id}/acknowledge` | oceniany | → COMPLETED, termin sprzeciwu +7 dni |
+| PUT | `/api/cycles/{id}/evaluate` | oceniający | `submit=false` → EVALUATION_DRAFT; `submit=true` → walidacja § 11 → AWAITING_ACK (+ `evaluationInterviewDate`, `delayReason`, `signatureMethod`); **ocena po terminie nie jest blokowana** — audyt `EVALUATION_OVERDUE` |
+| POST | `/api/cycles/{id}/acknowledge` | oceniany | opcjonalnie `{signatureMethod: MOBYWATEL_QES\|PAPER_HYBRID\|SYSTEM_DEMO}` (domyślnie SYSTEM_DEMO) → COMPLETED, termin sprzeciwu +7 dni |
 | POST | `/api/cycles/{id}/refusal` | oceniający / HR | fikcja zapoznania (powód, data) → COMPLETED, +7 dni na sprzeciw |
 | POST | `/api/cycles/{id}/appeal` | oceniany | → APPEALED (w terminie); `appealDecisionDeadline` = +14 dni (art. 83 ust. 3) |
 | POST | `/api/cycles/{id}/appeal/decision` | DG | CHANGE (nowe oceny) → COMPLETED; REDO → EVALUATION_DRAFT |
 | GET/POST | `/api/cycles/{id}/reschedule` | oceniający (pkt 1–3) / oceniany (pkt 4) | art. 81 ust. 8: `{mode: EVALUATOR_CHANGE\|EMPLOYEE_ABSENCE\|EVALUATOR_ABSENCE\|EMPLOYEE_REQUEST, newDueDate, reason}`; warunek > 6 mies.; zawiadomienie § 8 w `noticeText` |
 | POST | `/api/cycles/{id}/reschedule/{requestId}/decision` | oceniający | `{accept, comment}` — decyzja w sprawie wniosku ocenianego |
 | GET/POST | `/api/cycles/{id}/scope-changes` | HR / oceniający | `{changeDate, newPositionTitle?, description, significant}` → `NONE` \| `CRITERIA_RESET` (§ 9 ust. 1) \| `EVALUATION_REQUIRED` (art. 81 ust. 6) |
+| GET | `/api/hr/overdue` | HR, DG | aktywne cykle po terminie (bez sporządzonej oceny), malejąco wg `overdueDays`, z `escalationLevel`: 1–7 OCENIAJACY, 8–14 ZASTEPCA, 15–30 KADRY, > 30 DYREKTOR_GENERALNY |
+| GET | `/api/notifications` | zalogowany | wyliczane w locie dla widocznych cykli: `OVERDUE`, `DUE_SOON` (≤ 30 dni), `CRITERIA_DUE`, `APPEAL_DECISION_DUE`, `MANDATORY_GRADE_DUE`; `{type, severity, cycleId, dueDate, message}` |
+| GET | `/api/admin/schemas/{id}/package` | KPRM_ADMIN | pakiet reguł `meritum-rules-<versionCode>.json` (`format`, `versionCode`, `effectiveFrom`, `periodMonths`, `config`) |
 | GET | `/api/audit-logs?limit=` | HR, DG (urząd), KPRM_ADMIN (wszystko) | ostatnie zdarzenia audytowe |
 | POST | `/api/wellbeing` | każdy (o sobie) | `{workload, energy, support (1–5), wantsConversation}` — bez audytu, bez powiązania z oceną, tylko agregaty |
 | POST | `/api/core-ai/{socratic-draft\|consistency-check\|hr-partner\|interview-prep}?cycleId=` | zalogowany | proxy do ai-gateway + wpis `AI_*` w `audit_logs` (tryb LLM, `maskedPrompt`, kody ostrzeżeń) — AI Act art. 26 |
@@ -149,6 +155,8 @@ Zakończenie (zapoznanie, fikcja zapoznania, zmiana oceny przez DG) zapisuje wpi
   14 dni (art. 83 ust. 3); obligatoryjny stopień: 30 dni od zapoznania (art. 89 ust. 2).
 - **Zmiana terminu** (art. 81 ust. 8): 4 przesłanki; dopuszczalna, gdy od ostatniej oceny minęło > 6 mies. (pierwsza ocena:
   okres oceny > 6 mies.); pisemne zawiadomienie (§ 8) generowane w `noticeText`.
+- **Terminy nie blokują** (ustalenie z mentorami KPRM): ocena po terminie jest dopuszczalna; rejestrujemy `delay_reason`,
+  wpis `EVALUATION_OVERDUE` i eskalację (`OverdueRules`). PDF pokazuje przyczynę opóźnienia i adnotację QES.
 - **Obligatoryjny stopień** (art. 89 ust. 2, `GradeRules`): urzędnik SC, po ostatnim stopniu dwie kolejne oceny pozytywne na
   poziomie „powyżej” / „znacznie powyżej oczekiwań”, stopień < 9 → `mandatoryGradeEligible`.
 - Istniejące cykle zachowują `schema_version_id` (§ 13).
@@ -156,10 +164,11 @@ Zakończenie (zapoznanie, fikcja zapoznania, zmiana oceny przez DG) zapisuje wpi
 ## Model danych
 `offices` (+ `city`), `users` (+ `first_name`, `last_name`, `department`, `position_title`, `appointment_year`,
 `civil_service_grade`, `last_grade_date`), `schema_versions` (`config_json` JSONB: kryteria z opisami, `mandatoryBySheet`),
-`evaluation_cycles` (+ pola procesu z V3, daty rozmów, `evaluated_on`, `place`, `appeal_decision_deadline`),
+`evaluation_cycles` (+ pola procesu z V3, daty rozmów, `evaluated_on`, `place`, `appeal_decision_deadline`, `delay_reason`,
+`signature_method`),
 `evaluation_history`, `employee_notes`, `absences`, `reschedule_requests`, `scope_changes`, `wellbeing_surveys`, `audit_logs`.
 Seed demo (V5): 16 użytkowników, 15 cykli we wszystkich statusach (w tym 2 osoby uprawnione z art. 89 ust. 2, ponowna ocena,
-sprzeciw, oczekujący wniosek o zmianę terminu), 7 ankiet dobrostanu. Enumy pilnowane CHECK-ami w SQL i `@Enumerated(STRING)` w JPA.
+sprzeciw, oczekujący wniosek o zmianę terminu), 7 ankiet dobrostanu; V6: cykle 16–17 po terminie (eskalacja). Enumy pilnowane CHECK-ami w SQL i `@Enumerated(STRING)` w JPA.
 Hibernate `ddl-auto: validate` — schemat zmienia WYŁĄCZNIE Flyway.
 
 ## Zasady pracy

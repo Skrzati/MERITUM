@@ -8,6 +8,7 @@ import jakarta.validation.constraints.NotNull;
 import pl.gov.kprm.oceny.domain.DgDecision;
 import pl.gov.kprm.oceny.domain.RescheduleMode;
 import pl.gov.kprm.oceny.domain.SheetType;
+import pl.gov.kprm.oceny.domain.SignatureMethod;
 import pl.gov.kprm.oceny.rules.GradeRequest;
 
 import java.time.LocalDate;
@@ -34,9 +35,16 @@ public final class Requests {
     public record NoteRequest(@NotBlank String content, boolean isSharedAfterEval) {
     }
 
-    /** submit=false zapisuje szkic (EVALUATION_DRAFT), submit=true waliduje i przekazuje do zapoznania. */
+    /**
+     * submit=false zapisuje szkic (EVALUATION_DRAFT), submit=true waliduje i przekazuje do zapoznania.
+     * Ocena po terminie nie jest blokowana — delayReason trafia do arkusza i audytu.
+     */
     public record EvaluateRequest(@NotNull Map<String, Integer> scores, String justification, String iprzNotes,
-                                  GradeRequest gradeRequest, LocalDate evaluationInterviewDate, boolean submit) {
+                                  GradeRequest gradeRequest, LocalDate evaluationInterviewDate, boolean submit,
+                                  String delayReason, SignatureMethod signatureMethod) {
+    }
+
+    public record AcknowledgeRequest(SignatureMethod signatureMethod) {
     }
 
     public record RefusalRequest(@NotBlank String reason, @NotNull LocalDate date) {
