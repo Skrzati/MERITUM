@@ -11,10 +11,14 @@ import pl.gov.kprm.oceny.domain.User;
 import pl.gov.kprm.oceny.rules.Criterion;
 import pl.gov.kprm.oceny.rules.EvaluationResult;
 import pl.gov.kprm.oceny.service.CycleWorkflowService;
+import pl.gov.kprm.oceny.service.CycleWorkflowService.HrFacts;
+import pl.gov.kprm.oceny.service.IntegrationExportService;
+import pl.gov.kprm.oceny.service.IntegrationExportService.EzdPackage;
 import pl.gov.kprm.oceny.service.PdfExportService;
 import pl.gov.kprm.oceny.service.RescheduleService;
 import pl.gov.kprm.oceny.service.ScopeChangeService;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 @RestController
@@ -25,6 +29,7 @@ public class CycleController {
     private final RescheduleService reschedules;
     private final ScopeChangeService scopeChanges;
     private final PdfExportService pdfExport;
+    private final IntegrationExportService integrations;
     private final CycleMapper mapper;
 
     @GetMapping
@@ -147,5 +152,27 @@ public class CycleController {
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         ContentDisposition.inline().filename("arkusz-oceny-" + id + ".pdf").build().toString())
                 .body(pdf);
+    }
+
+    /** Zaproszenie iCalendar: rozmowa rozpoczynająca (DRAFT_CRITERIA, § 5 ust. 1) albo oceniająca (§ 10). */
+    @GetMapping(value = "/{id}/interview.ics", produces = "text/calendar")
+    public ResponseEntity<byte[]> interviewIcs(@PathVariable Long id, @CurrentUser User user) {
+        return ResponseEntity.ok()
+                .contentType(new MediaType("text", "calendar", StandardCharsets.UTF_8))
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment().filename("rozmowa-cykl-" + id + ".ics").build().toString())
+                .body(integrations.interviewIcs(id, user).getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** Metadane dokumentu do rejestracji w EZD RP (KRI). */
+    @GetMapping("/{id}/ezd-package")
+    public EzdPackage ezdPackage(@PathVariable Long id, @CurrentUser User user) {
+        return integrations.ezdPackage(id, user);
+    }
+
+    /** Fakty policzone z bazy — kontekst dla HR Partnera bez zgadywania przez AI. */
+    @GetMapping("/{id}/hr-facts")
+    public HrFacts hrFacts(@PathVariable Long id, @CurrentUser User user) {
+        return workflow.hrFacts(id, user);
     }
 }

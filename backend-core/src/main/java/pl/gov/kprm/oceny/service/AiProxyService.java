@@ -24,7 +24,8 @@ import java.util.Set;
  */
 @Service
 public class AiProxyService {
-    public static final Set<String> OPERATIONS = Set.of("socratic-draft", "consistency-check", "hr-partner", "interview-prep");
+    public static final Set<String> OPERATIONS = Set.of("socratic-draft", "consistency-check", "hr-partner", "interview-prep",
+            "suggest-criteria");
 
     private final RestClient http;
     private final String baseUrl;

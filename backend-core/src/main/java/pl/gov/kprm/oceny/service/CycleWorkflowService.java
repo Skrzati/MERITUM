@@ -13,6 +13,7 @@ import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 import static pl.gov.kprm.oceny.service.Access.*;
@@ -31,6 +32,7 @@ public class CycleWorkflowService {
     private final UserRepository users;
     private final OfficeRepository offices;
     private final AbsenceRepository absences;
+    private final ScopeChangeRepository scopeChanges;
     private final EvaluationHistoryService history;
     private final EvaluationRuleEngine engine;
     private final DeadlineService deadlines;
@@ -300,6 +302,32 @@ public class CycleWorkflowService {
         transition(cycle, user, CycleStatus.COMPLETED, "APPEAL_DECIDED", p);
         history.recordCompleted(cycle);
         return cycle;
+    }
+
+    /** Fakty z bazy dla HR Partnera; {@code daysSinceLastNote = null}, gdy w cyklu nie ma notatek. */
+    public record HrFacts(long absenceDays, long scopeChangesCount, long overloadNotesCount, long totalNotesCount,
+                          Long daysSinceLastNote, long overdueDays) {
+    }
+
+    @Transactional(readOnly = true)
+    public HrFacts hrFacts(Long id, User user) {
+        EvaluationCycle cycle = get(id, user);
+        LocalDate today = LocalDate.now(clock);
+        LocalDate periodEnd = cycle.getDueDate().isBefore(today) ? cycle.getDueDate() : today;
+        long absenceDays = absences.findByUserIdOrderByStartDateAsc(cycle.getEmployeeId()).stream()
+                .mapToLong(a -> HrFactsRules.absenceDaysWithin(a.getStartDate(), a.getEndDate(),
+                        cycle.getStartDate(), periodEnd))
+                .sum();
+        List<EmployeeNote> cycleNotes = notes.findByCycleIdOrderByCreatedAtAsc(id);
+        Long daysSinceLastNote = cycleNotes.isEmpty() ? null : ChronoUnit.DAYS.between(
+                cycleNotes.get(cycleNotes.size() - 1).getCreatedAt().atZoneSameInstant(clock.getZone()).toLocalDate(),
+                today);
+        return new HrFacts(absenceDays,
+                scopeChanges.findByCycleIdOrderByChangeDateAsc(id).size(),
+                cycleNotes.stream().filter(n -> HrFactsRules.signalsOverload(n.getContent())).count(),
+                cycleNotes.size(),
+                daysSinceLastNote,
+                OverdueRules.overdueDays(cycle.getDueDate(), today, OverdueService.awaitingEvaluation(cycle)));
     }
 
     /** Termin na ustalenie kryteriów (§ 7): 30 dni od rozpoczęcia cyklu albo 7 dni po ocenie negatywnej. */

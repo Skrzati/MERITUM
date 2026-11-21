@@ -182,6 +182,57 @@ class ApiIntegrationTest {
         assertThat(fetch("/api/cycles/13", HR).path("status").asText()).isEqualTo("DRAFT_CRITERIA");
     }
 
+    @Test
+    void interviewInvitationIsValidICalendarWithLegalBasis() throws Exception {
+        for (long cycleId : new long[]{2, 17}) {
+            String status = fetch("/api/cycles/" + cycleId, HR).path("status").asText();
+            var res = mvc.perform(withUser(get("/api/cycles/" + cycleId + "/interview.ics"), HR))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Content-Type", org.hamcrest.Matchers.startsWith("text/calendar")))
+                    .andReturn().getResponse();
+            String ics = res.getContentAsString(StandardCharsets.UTF_8);
+            assertThat(ics).startsWith("BEGIN:VCALENDAR\r\n").endsWith("END:VCALENDAR\r\n")
+                    .contains("BEGIN:VEVENT", "UID:cycle-" + cycleId, "DTSTART:", "ORGANIZER;", "ATTENDEE;");
+            assertThat(ics.replace("\r\n ", ""))
+                    .contains("DRAFT_CRITERIA".equals(status) ? "§ 5 ust. 1" : "§ 10");
+        }
+    }
+
+    @Test
+    void ezdPackageCarriesKriMetadata() throws Exception {
+        JsonNode ezd = fetch("/api/cycles/17/ezd-package", HR);
+        assertThat(ezd.path("caseId").asText()).startsWith("MERITUM/").endsWith("/17");
+        assertThat(ezd.path("pdfEndpoint").asText()).isEqualTo("/api/cycles/17/pdf");
+        assertThat(ezd.path("schemaVersion").asText()).isNotBlank();
+        assertThat(ezd.path("parties").size()).isEqualTo(2);
+        assertThat(ezd.path("sheetType").asText()).isNotBlank();
+        assertThat(ezd.has("signatureMethod") && ezd.has("evaluatedOn")).isTrue();
+    }
+
+    @Test
+    void hrFactsAreCountedFromDatabase() throws Exception {
+        JsonNode facts = fetch("/api/cycles/17/hr-facts", HR);
+        long evaluator = fetch("/api/cycles/17", HR).path("evaluatorId").asLong();
+        assertThat(facts.path("overdueDays").asLong()).isPositive();
+        assertThat(facts.path("totalNotesCount").asLong())
+                .isEqualTo(fetch("/api/cycles/17/notes", evaluator).size());
+        assertThat(facts.path("overloadNotesCount").asLong()).isLessThanOrEqualTo(facts.path("totalNotesCount").asLong());
+        assertThat(facts.has("absenceDays") && facts.has("scopeChangesCount") && facts.has("daysSinceLastNote")).isTrue();
+    }
+
+    @Test
+    void hrReportCsvIsAnonymizedWithBom() throws Exception {
+        var res = mvc.perform(withUser(get("/api/hr/reports/export"), DG)).andExpect(status().isOk())
+                .andExpect(header().string("Content-Type", org.hamcrest.Matchers.startsWith("text/csv")))
+                .andReturn().getResponse();
+        byte[] bytes = res.getContentAsByteArray();
+        assertThat(new byte[]{bytes[0], bytes[1], bytes[2]}).containsExactly(0xEF, 0xBB, 0xBF);
+        String csv = new String(bytes, StandardCharsets.UTF_8);
+        assertThat(csv).contains("sekcja;kategoria;liczba", "status;COMPLETED;", "wynik;NEGATIVE;<5", "eskalacja;");
+        assertThat(csv).doesNotContain("@");
+        mvc.perform(withUser(get("/api/hr/reports/export"), EMPLOYEE)).andExpect(status().isForbidden());
+    }
+
     private JsonNode fetch(String path, long userId) throws Exception {
         String body = mvc.perform(withUser(get(path), userId)).andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);

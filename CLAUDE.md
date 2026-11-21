@@ -22,11 +22,14 @@
 │       │   │                 #   ScopeChangeOutcome, HistorySource, SignatureMethod, EscalationLevel); EvaluationHistory, WellbeingSurvey, ScopeChange, RescheduleRequest
 │       │   ├── rules/        # czysta logika prawa, bez I/O: DeadlineService, EvaluationRuleEngine, CriteriaCatalog,
 │       │   │                 #   GradeRules (art. 89 ust. 2), RescheduleRules (art. 81 ust. 8), AnonymizedCount (k-anonimowość),
-│       │   │                 #   OverdueRules (dni po terminie + eskalacja), NextCycleRules (kolejny cykl)
+│       │   │                 #   OverdueRules (dni po terminie + eskalacja), NextCycleRules (kolejny cykl),
+│       │   │                 #   HrFactsRules (dni nieobecności w okresie, sygnały przeciążenia w notatkach)
 │       │   ├── service/      # CycleWorkflowService, EvaluationHistoryService, RescheduleService, ScopeChangeService,
 │       │   │                 #   WellbeingService, HrService, SchemaAdminService, StatsService, PdfExportService,
-│       │   │                 #   AiProxyService (audyt AI), OverdueService, NotificationService, AuditService, Access
+│       │   │                 #   AiProxyService (audyt AI), OverdueService, NotificationService, AuditService, Access,
+│       │   │                 #   IntegrationExportService (.ics, EZD), ReportExportService (CSV)
 │       │   ├── pdf/          # SheetHtmlRenderer (wzór arkusza A/B/C 1:1), GotenbergClient (HTML -> PDF/A-2b)
+│       │   ├── export/       # czyste renderery: IcsCalendarRenderer (RFC 5545), CsvReportRenderer (BOM, „;”, <k)
 │       │   ├── repository/   # Spring Data JPA
 │       │   ├── auth/         # JwtService (HS256), CurrentUserFilter (Bearer JWT / X-Demo-User-Id), SecurityHeadersFilter,
 │       │   │                 #   @CurrentUser resolver
@@ -37,7 +40,7 @@
 │           └── db/migration/            # Flyway: V1 schemat, V2 seed, V3 workflow + absences, V4 kryteria v1 (§ 4),
 │                                        #   V5 pola wzoru KPRM + historia/dobrostan/zakres/terminy + opisy kryteriów + seed demo,
 │                                        #   V6 delay_reason + signature_method + 2 cykle po terminie (ustalenia z mentorami)
-│   └── src/test/                        # JUnit 5: rules/, pdf/, auth/, service/ (jednostkowe) + it/ApiIntegrationTest
+│   └── src/test/                        # JUnit 5: rules/, pdf/, export/, auth/, service/ (jednostkowe) + it/ApiIntegrationTest
 │                                        #   (Testcontainers PostgreSQL: migracje V1–V5, walidacja JPA, scenariusze API);
 │                                        #   resources/docker-java.properties (api.version=1.44 dla Docker Engine 29+)
 ├── ai-gateway/               # Python 3.11 / FastAPI — AI & Privacy Gateway (kod zgodny z 3.9+)
@@ -47,9 +50,10 @@
 │   ├── app/llm.py            # klient OpenAI-compatible; brak klucza -> MOCK, błąd -> MOCK_FALLBACK
 │   ├── app/assistants.py     # sokratejski asystent, HR-partner, przygotowanie do rozmów (+ odpowiedzi MOCK)
 │   ├── app/catalog.py        # 14 kryteriów (zał. nr 1) + katalog działań rozwojowych do IPRZ
+│   ├── app/criteria_suggest.py # sugestia max 3 kryteriów dodatkowych spoza obowiązkowych + oczekiwania (§ 5 ust. 1 pkt 3)
 │   ├── app/consistency.py    # deterministyczne reguły spójności arkusza (skalibrowane na arkuszach KPRM)
 │   ├── app/guardrails.py     # brak propozycji punktów, brak treści medycznych, disclaimer AI Act
-│   └── tests/                # pytest: test_pii, test_consistency, test_api, test_kprm_regression
+│   └── tests/                # pytest: test_pii, test_consistency, test_api, test_kprm_regression, test_suggest_criteria
 │       └── fixtures/kprm_example_sheets.json  # pola 10 arkuszy wzorcowych KPRM + oczekiwane kody błędów
 └── frontend/                 # Next.js 16 (App Router) + TypeScript + Tailwind 3, React 19
     ├── Dockerfile            # node:22-alpine, output standalone, user non-root
@@ -98,12 +102,16 @@ Błędy: 403 brak uprawnień, 404 brak zasobu, 409 niedozwolone przejście stanu
 | GET/POST | `/api/cycles/{id}/reschedule` | oceniający (pkt 1–3) / oceniany (pkt 4) | art. 81 ust. 8: `{mode: EVALUATOR_CHANGE\|EMPLOYEE_ABSENCE\|EVALUATOR_ABSENCE\|EMPLOYEE_REQUEST, newDueDate, reason}`; warunek > 6 mies.; zawiadomienie § 8 w `noticeText` |
 | POST | `/api/cycles/{id}/reschedule/{requestId}/decision` | oceniający | `{accept, comment}` — decyzja w sprawie wniosku ocenianego |
 | GET/POST | `/api/cycles/{id}/scope-changes` | HR / oceniający | `{changeDate, newPositionTitle?, description, significant}` → `NONE` \| `CRITERIA_RESET` (§ 9 ust. 1) \| `EVALUATION_REQUIRED` (art. 81 ust. 6) |
+| GET | `/api/cycles/{id}/interview.ics` | jak `GET /api/cycles/{id}` | `text/calendar` (RFC 5545, czas UTC): rozmowa rozpoczynająca przy `DRAFT_CRITERIA` (§ 5 ust. 1), w pozostałych etapach oceniająca (§ 10); data rozmowy z cyklu albo termin kryteriów / oceny, 10:00, 60 min |
+| GET | `/api/cycles/{id}/ezd-package` | jak `GET /api/cycles/{id}` | metadane KRI/EZD RP: `caseId`, `title`, `documentType`, `sheetType`, `office`, `parties`, `status`, `evaluatedOn`, `acknowledgedAt`, `signatureMethod`, `format`, `access`, `legalBasis`, `pdfEndpoint`, `schemaVersion`, `generatedAt` |
+| GET | `/api/cycles/{id}/hr-facts` | jak `GET /api/cycles/{id}` | fakty z bazy dla HR Partnera: `{absenceDays, scopeChangesCount, overloadNotesCount, totalNotesCount, daysSinceLastNote, overdueDays}` |
+| GET | `/api/hr/reports/export` | HR, DG | CSV (UTF-8 z BOM, `;`) — te same agregaty co `/api/stats/summary` + eskalacja; liczności 1..k-1 jako `<k`; audyt `REPORT_EXPORTED` |
 | GET | `/api/hr/overdue` | HR, DG | aktywne cykle po terminie (bez sporządzonej oceny), malejąco wg `overdueDays`, z `escalationLevel`: 1–7 OCENIAJACY, 8–14 ZASTEPCA, 15–30 KADRY, > 30 DYREKTOR_GENERALNY |
 | GET | `/api/notifications` | zalogowany | wyliczane w locie dla widocznych cykli: `OVERDUE`, `DUE_SOON` (≤ 30 dni), `CRITERIA_DUE`, `APPEAL_DECISION_DUE`, `MANDATORY_GRADE_DUE`; `{type, severity, cycleId, dueDate, message}` |
 | GET | `/api/admin/schemas/{id}/package` | KPRM_ADMIN | pakiet reguł `meritum-rules-<versionCode>.json` (`format`, `versionCode`, `effectiveFrom`, `periodMonths`, `config`) |
 | GET | `/api/audit-logs?limit=` | HR, DG (urząd), KPRM_ADMIN (wszystko) | ostatnie zdarzenia audytowe |
 | POST | `/api/wellbeing` | każdy (o sobie) | `{workload, energy, support (1–5), wantsConversation}` — bez audytu, bez powiązania z oceną, tylko agregaty |
-| POST | `/api/core-ai/{socratic-draft\|consistency-check\|hr-partner\|interview-prep}?cycleId=` | zalogowany | proxy do ai-gateway + wpis `AI_*` w `audit_logs` (tryb LLM, `maskedPrompt`, kody ostrzeżeń) — AI Act art. 26 |
+| POST | `/api/core-ai/{socratic-draft\|consistency-check\|hr-partner\|interview-prep\|suggest-criteria}?cycleId=` | zalogowany | proxy do ai-gateway + wpis `AI_*` w `audit_logs` (tryb LLM, `maskedPrompt`, kody ostrzeżeń) — AI Act art. 26 |
 | GET | `/api/hr/employees?q=&sort=&dir=` | HR | lista pracowników urzędu |
 | POST | `/api/hr/absences` | HR | rejestracja nieobecności, przeliczenie `due_date` |
 | POST | `/api/hr/handover` | HR | zmiana przełożonego (§ 9 ust. 3) |
@@ -122,6 +130,7 @@ Błędy: 403 brak uprawnień, 404 brak zasobu, 409 niedozwolone przejście stanu
 | POST | `/api/ai/consistency-check` | `warnings[{code, severity, message}]`, `auto_modified: false` |
 | POST | `/api/ai/hr-partner` | `masked_prompt`, `burnout_risk_signal`, `conversation_starters`, `organizational_suggestions`, `appreciation_moment` |
 | POST | `/api/ai/interview-prep` | `{stage: INITIAL\|EVALUATION}` → `goal`, `agenda[{topic, legal_basis, questions}]` (§ 5 ust. 1: 4 zagadnienia / § 10: 3), `difficult_situations`, `development_catalog` (IPRZ) |
+| POST | `/api/ai/suggest-criteria` | `{position_title, department, sheet_type, mandatory_codes, responsibilities_summary}` → `masked_prompt`, `suggestions[{code, name, reason, expectations}]` (max 3, wyłącznie z katalogu, spoza obowiązkowych — filtr także na odpowiedzi LLM), `ai_disclaimer`, `mode` |
 
 Kody `consistency-check`: `CRITERIA_MISMATCH`, `FOREIGN_NAME`, `LEVEL_MISMATCH`, `AVERAGE_MISMATCH`, `DUPLICATE_TEXT`, `GENDER_MISMATCH`.
 Frontend (Etap 6) powinien wołać AI przez `/api/core-ai/*` (audyt), a nie bezpośrednio `/api/ai/*`.
@@ -206,6 +215,7 @@ Hibernate `ddl-auto: validate` — schemat zmienia WYŁĄCZNIE Flyway.
   umieszczonych błędów, 0 fałszywych alarmów) — każda zmiana reguł musi utrzymać ten wynik.
 - Każde wywołanie AI z UI przez `/api/core-ai/*` → audyt (AI Act art. 26). W audycie tylko prompt po maskowaniu.
 - `LLM_LIVE=true` lub `LLM_API_KEY` (np. `ollama`) → LIVE; inaczej MOCK.
+- Produkcja: tylko modele na licencji Apache 2.0 (PLLuM-12B / Bielik), bez wariantów `-nc`.
 
 ### Frontend
 - Przeglądarka rozmawia wyłącznie z Next.js (proxy przez rewrites) — brak CORS, adresy usług tylko w build args.

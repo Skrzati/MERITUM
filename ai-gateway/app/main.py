@@ -3,7 +3,7 @@ from typing import Dict, List, Literal, Optional
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
-from . import assistants, consistency
+from . import assistants, consistency, criteria_suggest
 from .guardrails import AI_DISCLAIMER
 from .llm import LLMClient
 
@@ -104,6 +104,28 @@ class InterviewPrepResponse(BaseModel):
     mode: str
 
 
+class SuggestCriteriaRequest(BaseModel):
+    position_title: str
+    department: str = ""
+    sheet_type: Literal["A", "B", "C"]
+    mandatory_codes: List[str] = Field(default_factory=list)
+    responsibilities_summary: str = ""
+
+
+class CriterionSuggestion(BaseModel):
+    code: str
+    name: str
+    reason: str
+    expectations: List[str]
+
+
+class SuggestCriteriaResponse(BaseModel):
+    masked_prompt: str
+    suggestions: List[CriterionSuggestion]
+    ai_disclaimer: str = AI_DISCLAIMER
+    mode: str
+
+
 @app.get("/health")
 def health() -> Dict[str, str]:
     return {"status": "UP", "service": "ai-gateway", "llm_mode": llm.mode, "llm_model": llm.model}
@@ -131,3 +153,9 @@ def hr_partner(req: HrPartnerRequest) -> Dict:
 def interview_prep(req: InterviewPrepRequest) -> Dict:
     criteria = [assistants.CriterionScore(c.name, c.score, c.code) for c in req.criteria_scores]
     return assistants.interview_prep(llm, req.employee_name, req.sheet_type, req.stage, criteria, req.notes)
+
+
+@app.post("/api/ai/suggest-criteria", response_model=SuggestCriteriaResponse)
+def suggest_criteria(req: SuggestCriteriaRequest) -> Dict:
+    return criteria_suggest.suggest_criteria(llm, req.position_title, req.department, req.sheet_type,
+                                             req.mandatory_codes, req.responsibilities_summary)
