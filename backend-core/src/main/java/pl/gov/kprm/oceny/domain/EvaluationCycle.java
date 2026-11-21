@@ -56,4 +56,10 @@ public class EvaluationCycle {
     private DgDecision dgDecision;
     private String dgComment;
     private OffsetDateTime dgDecidedAt;
+    private LocalDate criteriaInterviewDate;
+    private LocalDate criteriaConfirmedOn;
+    private LocalDate evaluationInterviewDate;
+    private LocalDate evaluatedOn;
+    private String place;
+    private LocalDate appealDecisionDeadline;
 }

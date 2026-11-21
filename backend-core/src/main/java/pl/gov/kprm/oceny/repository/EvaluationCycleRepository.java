@@ -13,4 +13,6 @@ public interface EvaluationCycleRepository extends JpaRepository<EvaluationCycle
     List<EvaluationCycle> findByOfficeIdOrderByIdAsc(Long officeId);
 
     List<EvaluationCycle> findAllByOrderByIdAsc();
+
+    List<EvaluationCycle> findByEmployeeIdOrderByStartDateDesc(Long employeeId);
 }

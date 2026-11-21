@@ -3,10 +3,12 @@ package pl.gov.kprm.oceny.pdf;
 import org.springframework.stereotype.Component;
 import org.springframework.web.util.HtmlUtils;
 import pl.gov.kprm.oceny.domain.EvaluationCycle;
+import pl.gov.kprm.oceny.domain.EvaluationHistory;
+import pl.gov.kprm.oceny.domain.User;
 import pl.gov.kprm.oceny.rules.Criterion;
-import pl.gov.kprm.oceny.rules.DeadlineService;
 import pl.gov.kprm.oceny.rules.EvaluationOutcome;
 import pl.gov.kprm.oceny.rules.EvaluationRuleEngine;
+import pl.gov.kprm.oceny.rules.PerformanceLevel;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -15,144 +17,254 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Objects;
 
-/** Odwzorowanie wzoru arkusza A/B/C (załączniki nr 2–4 rozporządzenia) w czystym HTML/CSS pod A4. */
+/** Odwzorowanie 1:1 wzoru arkusza A/B/C (załączniki nr 2–4 do rozporządzenia PRM z 4.04.2016, Dz. U. poz. 470). */
 @Component
 public class SheetHtmlRenderer {
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy");
-    private static final List<Integer> SCALE = EvaluationRuleEngine.ALLOWED_SCORES.stream().sorted().toList();
+    private static final String X = "X";
     private static final String EMPTY = "&nbsp;";
+    private static final String REGULATION = "rozporządzenia Prezesa Rady Ministrów z dnia 4 kwietnia 2016 r. w sprawie "
+            + "warunków i sposobu przeprowadzania ocen okresowych urzędników służby cywilnej i pracowników służby cywilnej "
+            + "(Dz. U. poz. 470)";
+    private static final String ACT = "ustawy z dnia 21 listopada 2008 r. o służbie cywilnej";
+    private static final List<String[]> SCALE_HEADERS = List.of(
+            new String[]{"Znacznie poniżej oczekiwań", "1 punkt"}, new String[]{"Poniżej oczekiwań", "3 punkty"},
+            new String[]{"Na poziomie oczekiwań", "5 punktów"}, new String[]{"Powyżej oczekiwań", "7 punktów"},
+            new String[]{"Znacznie powyżej oczekiwań", "9 punktów"});
+    private static final List<Integer> SCALE = EvaluationRuleEngine.ALLOWED_SCORES.stream().sorted().toList();
+    private static final String[][] LEVEL_ROWS = {
+            {"SIGNIFICANTLY_BELOW", "od 1 punktu do 2 punktów", "znacznie poniżej oczekiwań"},
+            {"BELOW", "powyżej 2 punktów do 4 punktów", "poniżej oczekiwań"},
+            {"MEETS", "powyżej 4 punktów do 6 punktów", "na poziomie oczekiwań"},
+            {"ABOVE", "powyżej 6 punktów do 8 punktów", "powyżej oczekiwań"},
+            {"SIGNIFICANTLY_ABOVE", "powyżej 8 punktów do 9 punktów", "znacznie powyżej oczekiwań"}};
+    private static final String[] GRADES_NOMINATIVE = {"", "pierwszy", "drugi", "trzeci", "czwarty", "piąty", "szósty",
+            "siódmy", "ósmy", "dziewiąty"};
+    private static final String[] GRADES_GENITIVE = {"", "pierwszego", "drugiego", "trzeciego", "czwartego", "piątego",
+            "szóstego", "siódmego", "ósmego", "dziewiątego"};
 
     private static final String CSS = """
-            @page { size: A4; margin: 16mm 14mm; }
-            body { font-family: 'Noto Sans', 'DejaVu Sans', Arial, sans-serif; font-size: 10.5pt; color: #000; }
-            h1 { font-size: 14pt; text-align: center; margin: 4px 0 2px; }
-            h2 { font-size: 11.5pt; margin: 18px 0 6px; padding: 4px 6px; background: #e6e6e6; border: 1px solid #000; }
-            .sub { text-align: center; font-size: 9.5pt; margin-bottom: 12px; }
-            .office { text-align: center; font-weight: bold; text-transform: uppercase; }
-            table { width: 100%; border-collapse: collapse; margin: 4px 0; page-break-inside: avoid; }
-            th, td { border: 1px solid #000; padding: 4px 6px; vertical-align: top; }
-            th { background: #f2f2f2; font-weight: bold; text-align: left; }
+            @page { size: A4; margin: 14mm 13mm; }
+            body { font-family: 'Noto Sans', 'DejaVu Sans', Arial, sans-serif; font-size: 9.5pt; color: #000; }
+            .sheet { text-align: right; font-weight: bold; }
+            h1 { font-size: 12.5pt; text-align: center; margin: 4px 0 10px; }
+            h2 { font-size: 11pt; text-align: center; margin: 16px 0 6px; letter-spacing: 1px; }
+            h3 { font-size: 9.5pt; margin: 10px 0 3px; text-transform: uppercase; }
+            table { width: 100%; border-collapse: collapse; margin: 3px 0; page-break-inside: avoid; }
+            th, td { border: 1px solid #000; padding: 3px 5px; vertical-align: top; }
+            th { background: #eee; text-align: left; }
+            td.l { width: 34%; font-weight: bold; background: #f7f7f7; }
             td.c, th.c { text-align: center; width: 9%; }
-            td.label { width: 38%; font-weight: bold; background: #fafafa; }
-            .box { height: 56px; white-space: pre-wrap; }
-            .sign { margin-top: 26px; display: flex; justify-content: space-between; font-size: 9pt; }
-            .sign div { width: 44%; border-top: 1px dotted #000; text-align: center; padding-top: 3px; }
-            .note { font-size: 9pt; border: 1px solid #000; padding: 6px; margin-top: 8px; }
-            .result { font-weight: bold; font-size: 11.5pt; }
-            footer { margin-top: 18px; font-size: 8pt; color: #444; text-align: right; }
+            td.x { text-align: center; width: 7%; font-weight: bold; font-size: 11pt; }
+            .box { height: 62px; white-space: pre-wrap; }
+            .text { white-space: pre-wrap; }
+            .sign { display: flex; justify-content: space-between; gap: 10px; margin: 18px 0 4px; font-size: 8.5pt; }
+            .sign div { flex: 1; border-top: 1px dotted #000; text-align: center; padding-top: 2px; }
+            .sign div b { display: block; font-weight: normal; margin-top: -16px; margin-bottom: 4px; font-size: 9.5pt; }
+            .note { font-size: 8.5pt; border: 1px solid #000; padding: 5px; margin-top: 8px; }
+            .muted { color: #555; }
+            .refusal { font-style: italic; }
+            footer { margin-top: 14px; font-size: 7.5pt; color: #444; text-align: right; }
             """;
 
     public String render(SheetData d) {
         EvaluationCycle c = d.cycle();
-        StringBuilder html = new StringBuilder(8192)
-                .append("<!DOCTYPE html><html lang=\"pl\"><head><meta charset=\"UTF-8\"><title>Arkusz oceny okresowej ")
-                .append(c.getSheetType()).append("</title><style>").append(CSS).append("</style></head><body>");
-
-        html.append("<div class=\"office\">").append(esc(d.office().getName())).append("</div>")
-                .append("<h1>ARKUSZ OCENY OKRESOWEJ — ARKUSZ ").append(c.getSheetType()).append("</h1>")
-                .append("<div class=\"sub\">").append(esc(d.sheetDescription())).append("</div>");
-
-        html.append("<table>")
-                .append(row("Imię i nazwisko ocenianego", d.employee().getFullName()))
-                .append(row("Status", d.employee().isCivilServant() ? "urzędnik służby cywilnej" : "pracownik służby cywilnej"))
-                .append(row("Imię i nazwisko oceniającego", d.evaluator().getFullName()))
-                .append(row("Okres objęty oceną", date(c.getStartDate()) + " – " + date(c.getDueDate())))
-                .append(row("Rodzaj oceny", c.isReevaluation() ? "ponowna ocena (po ocenie negatywnej)" : "ocena okresowa"))
-                .append("</table>");
-
-        renderPartOne(html, d);
-        renderPartTwo(html, d);
+        StringBuilder h = new StringBuilder(16384)
+                .append("<!DOCTYPE html><html lang=\"pl\"><head><meta charset=\"UTF-8\"><title>Arkusz ")
+                .append(c.getSheetType()).append("</title><style>").append(CSS).append("</style></head><body>")
+                .append("<div class=\"sheet\">ARKUSZ ").append(c.getSheetType()).append("</div>")
+                .append("<h1>OCENA OKRESOWA<br>URZĘDNIKA SŁUŻBY CYWILNEJ LUB PRACOWNIKA SŁUŻBY CYWILNEJ</h1>");
+        partOne(h, d);
+        partTwo(h, d);
         if (d.includesGradeRequest()) {
-            renderPartThree(html, d);
+            partThree(h, d);
         }
-        html.append("<footer>Wygenerowano w systemie MERITUM · cykl #").append(c.getId()).append("</footer></body></html>");
-        return html.toString();
+        return h.append("<footer>Wygenerowano w systemie MERITUM · cykl #").append(c.getId())
+                .append("</footer></body></html>").toString();
     }
 
-    private static void renderPartOne(StringBuilder html, SheetData d) {
-        html.append("<h2>CZĘŚĆ I — Kryteria oceny</h2><table><tr><th style=\"width:8%\">Lp.</th><th>Kryterium</th>")
-                .append("<th style=\"width:22%\">Rodzaj</th></tr>");
-        int i = 1;
-        for (Criterion cr : d.criteria()) {
-            html.append("<tr><td class=\"c\">").append(i++).append("</td><td>").append(esc(cr.name()))
-                    .append("</td><td>").append(cr.mandatory() ? "obowiązkowe" : "dodatkowe").append("</td></tr>");
-        }
-        if (d.criteria().isEmpty()) {
-            html.append("<tr><td colspan=\"3\">Kryteria nie zostały jeszcze ustalone.</td></tr>");
-        }
-        html.append("</table><table>")
-                .append(row("Data rozmowy i ustalenia kryteriów", date(d.criteriaSetOn())))
-                .append(row("Potwierdzenie zapoznania się ocenianego z kryteriami", date(d.criteriaConfirmedOn())))
-                .append("</table>")
-                .append(signatures("data i podpis oceniającego", "data i podpis ocenianego"));
-    }
-
-    private static void renderPartTwo(StringBuilder html, SheetData d) {
+    private static void partOne(StringBuilder h, SheetData d) {
         EvaluationCycle c = d.cycle();
-        html.append("<h2>CZĘŚĆ II — Ocena</h2><table><tr><th>Kryterium</th>");
-        SCALE.forEach(v -> html.append("<th class=\"c\">").append(v).append("</th>"));
-        html.append("</tr>");
-        for (Criterion cr : d.criteria()) {
-            Integer score = d.scores().get(cr.code());
-            html.append("<tr><td>").append(esc(cr.name())).append("</td>");
-            SCALE.forEach(v -> html.append("<td class=\"c\">").append(v.equals(score) ? "X" : EMPTY).append("</td>"));
-            html.append("</tr>");
+        h.append("<h2>CZĘŚĆ I</h2><table>").append(row("Nazwa urzędu", d.office().getName())).append("</table>")
+                .append("<h3>Dane ocenianego</h3>").append(personTable(d.employee(), "Stanowisko pracy"))
+                .append("<h3>Dane oceniającego</h3>").append(personTable(d.evaluator(), "Stanowisko"))
+                .append("<h3>Kryteria oceny i termin sporządzenia oceny</h3>")
+                .append("<table><tr><th>Kryteria obowiązkowe</th><th>Kryteria dodatkowe wybrane przez oceniającego ")
+                .append("(nie więcej niż 3)</th></tr>");
+        List<Criterion> mandatory = d.criteria().stream().filter(Criterion::mandatory).toList();
+        List<Criterion> additional = d.criteria().stream().filter(cr -> !cr.mandatory()).toList();
+        int rows = Math.max(mandatory.size(), 3);
+        for (int i = 0; i < rows; i++) {
+            h.append("<tr><td>").append(i < mandatory.size() ? esc(mandatory.get(i).name()) : EMPTY).append("</td><td>")
+                    .append(i < additional.size() ? esc(additional.get(i).name()) : EMPTY).append("</td></tr>");
         }
-        html.append("</table><table>")
-                .append(row("Średnia ocen cząstkowych", averageDisplay(d)))
-                .append(row("Poziom wykonywania obowiązków", c.getPerformanceLevel() == null ? "" : c.getPerformanceLevel().label()))
-                .append("<tr><td class=\"label\">Ocena</td><td class=\"result\">").append(outcome(c.getFinalResult()))
-                .append("</td></tr>")
+        h.append("</table><table>").append(row("Termin sporządzenia oceny (dd.mm.rrrr)", date(c.getDueDate())))
                 .append("</table>")
-                .append(box("Uzasadnienie oceny", c.getJustification()))
-                .append(box("Wnioski dotyczące indywidualnego programu rozwoju zawodowego (IPRZ)", c.getIprzNotes()))
-                .append(signatures("data i podpis oceniającego", "data i podpis ocenianego (zapoznanie się z oceną)"));
+                .append("<p>Potwierdzamy<br>− przeprowadzenie rozmowy, o której mowa w § 5 ust. 1 ").append(REGULATION)
+                .append(", i omówienie w trakcie tej rozmowy wszystkich wymaganych zagadnień,<br>")
+                .append("− zapoznanie ocenianego z kryteriami oceny oraz terminem sporządzenia oceny.</p>")
+                .append(signature(c.getPlace(), c.getCriteriaInterviewDate(), "podpis oceniającego"))
+                .append(signature(c.getPlace(), c.getCriteriaConfirmedOn(), "podpis ocenianego"));
+    }
 
-        html.append("<div class=\"note\"><b>Pouczenie:</b> od oceny okresowej ocenianemu przysługuje sprzeciw do ")
-                .append("dyrektora generalnego urzędu, wnoszony w terminie ").append(DeadlineService.APPEAL_DAYS)
-                .append(" dni od dnia zapoznania się z oceną.");
-        if (c.getAcknowledgedAt() != null) {
-            html.append("<br>Data zapoznania się z oceną: ").append(date(c.getAcknowledgedAt()))
-                    .append(". Termin na wniesienie sprzeciwu upływa: ").append(date(c.getAppealDeadline())).append('.');
+    private static void partTwo(StringBuilder h, SheetData d) {
+        EvaluationCycle c = d.cycle();
+        h.append("<h2>CZĘŚĆ II</h2><table>")
+                .append(row("Data przeprowadzenia rozmowy oceniającej (dd.mm.rrrr)", date(c.getEvaluationInterviewDate())))
+                .append(row("Okres, w którym oceniany podlegał ocenie",
+                        "od: " + date(c.getCriteriaConfirmedOn()) + "   do: " + date(c.getEvaluatedOn())))
+                .append("</table>");
+        scoreMatrix(h, "Kryteria obowiązkowe", d.criteria().stream().filter(Criterion::mandatory).toList(), d);
+        scoreMatrix(h, "Kryteria dodatkowe wybrane przez oceniającego",
+                d.criteria().stream().filter(cr -> !cr.mandatory()).toList(), d);
+
+        h.append("<table>").append(row("Średnia arytmetyczna z ocen cząstkowych przyznanych za poszczególne kryteria oceny",
+                averageDisplay(d))).append("</table>");
+        h.append("<h3>Przyznanie oceny</h3><table><tr><th class=\"c\">X</th><th>Liczba punktów stanowiąca średnią ")
+                .append("arytmetyczną ze wszystkich ocen cząstkowych</th><th>Ogólny poziom spełnienia kryteriów oceny</th></tr>");
+        PerformanceLevel level = c.getPerformanceLevel();
+        for (String[] r : LEVEL_ROWS) {
+            h.append("<tr><td class=\"x\">").append(level != null && level.name().equals(r[0]) ? X : EMPTY)
+                    .append("</td><td>").append(r[1]).append("</td><td>").append(r[2]).append("</td></tr>");
         }
+        EvaluationOutcome outcome = c.getFinalResult();
+        h.append("</table><table><tr><td class=\"l\">OCENA OKRESOWA W SŁUŻBIE CYWILNEJ</td>")
+                .append("<td>POZYTYWNA</td><td class=\"x\">").append(outcome == EvaluationOutcome.POSITIVE ? X : EMPTY)
+                .append("</td><td>NEGATYWNA</td><td class=\"x\">").append(outcome == EvaluationOutcome.NEGATIVE ? X : EMPTY)
+                .append("</td></tr></table>")
+                .append(box("Uzasadnienie przyznanej oceny okresowej", c.getJustification()))
+                .append(box("Wnioski dotyczące indywidualnego programu rozwoju zawodowego", c.getIprzNotes()));
+
+        boolean civilServant = d.employee().isCivilServant();
+        EvaluationHistory prev = d.previousEvaluation();
+        h.append("<h3>Dane dotyczące poprzedniej oceny okresowej urzędnika służby cywilnej</h3>")
+                .append("<table><tr><th>Ocena</th><th>Poziom</th><th>Data sporządzenia (dd.mm.rrrr)</th></tr><tr>");
+        if (!civilServant) {
+            h.append("<td colspan=\"3\" class=\"muted\">nie dotyczy (oceniany jest pracownikiem służby cywilnej)</td>");
+        } else if (prev == null) {
+            h.append("<td>brak</td><td>").append(EMPTY).append("</td><td>").append(EMPTY).append("</td>");
+        } else {
+            h.append("<td>").append(prev.getOutcome() == EvaluationOutcome.POSITIVE ? "pozytywna" : "negatywna")
+                    .append("</td><td>").append(prev.getLevel().label()).append("</td><td>")
+                    .append(date(prev.getEvaluatedOn())).append("</td>");
+        }
+        boolean attached = d.includesGradeRequest();
+        h.append("</tr></table><h3>Czy do oceny okresowej dołączono wniosek o przyznanie kolejnego stopnia służbowego?</h3>")
+                .append("<table><tr><td>TAK</td><td class=\"x\">").append(civilServant && attached ? X : EMPTY)
+                .append("</td><td>NIE</td><td class=\"x\">").append(civilServant && !attached ? X : EMPTY)
+                .append("</td><td>NIE DOTYCZY (oceniany jest pracownikiem służby cywilnej)</td><td class=\"x\">")
+                .append(civilServant ? EMPTY : X).append("</td></tr></table>");
+
+        h.append("<h3>Dane oceniającego</h3>").append(personTable(d.evaluator(), "Stanowisko"))
+                .append(signature(c.getPlace(), c.getEvaluatedOn(), "podpis oceniającego"))
+                .append("<p>Przeprowadzono ze mną rozmowę oceniającą oraz zapoznałem(-łam) się z oceną okresową i wnioskami ")
+                .append("dotyczącymi indywidualnego programu rozwoju zawodowego.</p>");
         if (c.getRefusalDate() != null) {
-            html.append("<br>Oceniany odmówił zapoznania się z oceną w dniu ").append(date(c.getRefusalDate()))
-                    .append(". Powód: ").append(esc(c.getRefusalReason())).append('.');
+            h.append("<p class=\"refusal\">[oceniany odmówił podpisania zapoznania się z oceną — ")
+                    .append(date(c.getRefusalDate())).append("; ").append(esc(c.getRefusalReason())).append("]</p>");
+        } else {
+            h.append("<div class=\"sign\"><div><b>").append(esc(c.getPlace())).append("</b>miejscowość</div><div><b>")
+                    .append(date(c.getAcknowledgedAt())).append("</b>data (dd.mm.rrrr)</div><div><b>")
+                    .append(c.getAcknowledgedAt() != null ? esc(d.employee().getFullName()) : EMPTY)
+                    .append("</b>imię i nazwisko lub pieczątka ocenianego</div><div><b>&nbsp;</b>podpis ocenianego</div></div>");
         }
-        html.append("</div>");
+        h.append("<div class=\"note\"><b>Pouczenie</b><br>Na podstawie art. 83 ust. 1 ").append(ACT)
+                .append(" od oceny okresowej służy, w terminie 7 dni od dnia zapoznania się z oceną, sprzeciw do ")
+                .append("dyrektora generalnego urzędu.");
+        if (c.getAppealDeadline() != null) {
+            h.append("<br>Termin na wniesienie sprzeciwu upływa: ").append(date(c.getAppealDeadline())).append('.');
+        }
+        h.append("</div>");
     }
 
-    private static void renderPartThree(StringBuilder html, SheetData d) {
-        html.append("<h2>CZĘŚĆ III — Wniosek o przyznanie kolejnego stopnia służbowego</h2>")
-                .append("<table>").append(row("Urzędnik służby cywilnej", d.employee().getFullName())).append("</table>")
-                .append(box("Umotywowanie wniosku", d.gradeRequest().motivation()))
-                .append(signatures("data i podpis oceniającego", "data i podpis bezpośredniego przełożonego"));
+    private static void partThree(StringBuilder h, SheetData d) {
+        User e = d.employee();
+        int grade = e.getCivilServiceGrade() == null ? 0 : e.getCivilServiceGrade();
+        h.append("<h2 style=\"page-break-before: always\">CZĘŚĆ III</h2>")
+                .append("<p>Wniosek jest wypełniany i dołączany do arkusza oceny okresowej ocenianego tylko w sytuacji ")
+                .append("skorzystania przez oceniającego z możliwości przewidzianej w art. 89 ust. 1 ").append(ACT).append(".</p>")
+                .append("<h3>Dane urzędnika służby cywilnej</h3><table>")
+                .append(row("Imię", firstName(e))).append(row("Nazwisko", lastName(e)))
+                .append(row("Rok mianowania (rrrr)", e.getAppointmentYear() == null ? "" : String.valueOf(e.getAppointmentYear())))
+                .append(row("Posiadany stopień służbowy", grade > 0 ? GRADES_NOMINATIVE[grade] : ""))
+                .append(row("Data przyznania stopnia służbowego (dd.mm.rrrr)", date(e.getLastGradeDate())))
+                .append("</table><h3>Wniosek o przyznanie urzędnikowi służby cywilnej kolejnego stopnia służbowego</h3>");
+        if (grade >= EvaluationRuleEngine.HIGHEST_GRADE) {
+            h.append("<p>Ocenianemu nie można przyznać kolejnego stopnia służbowego. Oceniany posiada już najwyższy możliwy ")
+                    .append("stopień służbowy.</p>");
+        } else {
+            h.append("<p>W związku z uzyskaniem przez Panią/Pana <b>").append(esc(e.getFullName()))
+                    .append("</b> pozytywnej oceny okresowej, na podstawie art. 89 ust. 1 ").append(ACT)
+                    .append(" wnioskuję o przyznanie <b>").append(grade > 0 ? GRADES_GENITIVE[grade + 1] : "kolejnego")
+                    .append("</b> stopnia służbowego.</p>");
+        }
+        h.append(box("Umotywowanie wniosku", d.gradeRequest().motivation()));
+        h.append("<div class=\"sign\"><div><b>").append(esc(d.cycle().getPlace())).append("</b>miejscowość</div><div><b>")
+                .append(date(d.cycle().getEvaluatedOn())).append("</b>data (dd.mm.rrrr)</div><div><b>")
+                .append(esc(d.evaluator().getFullName())).append("</b>imię i nazwisko lub pieczątka oceniającego</div>")
+                .append("<div><b>&nbsp;</b>podpis oceniającego</div></div>");
     }
 
+    private static void scoreMatrix(StringBuilder h, String title, List<Criterion> criteria, SheetData d) {
+        h.append("<table><tr><th rowspan=\"2\">").append(esc(title.toUpperCase())).append("</th>");
+        SCALE_HEADERS.forEach(s -> h.append("<th class=\"c\">").append(s[0]).append("</th>"));
+        h.append("</tr><tr>");
+        SCALE_HEADERS.forEach(s -> h.append("<th class=\"c\">").append(s[1]).append("</th>"));
+        h.append("</tr>");
+        if (criteria.isEmpty()) {
+            h.append("<tr><td>brak</td>").append("<td class=\"x\">&nbsp;</td>".repeat(SCALE.size())).append("</tr>");
+        }
+        for (Criterion cr : criteria) {
+            Integer score = d.scores().get(cr.code());
+            h.append("<tr><td>").append(esc(cr.name())).append("</td>");
+            SCALE.forEach(v -> h.append("<td class=\"x\">").append(v.equals(score) ? X : EMPTY).append("</td>"));
+            h.append("</tr>");
+        }
+        h.append("</table>");
+    }
+
+    /** Średnia z przecinkiem dziesiętnym i 1 miejscem po przecinku (np. „4,2”). */
     static String averageDisplay(SheetData d) {
         List<Integer> values = d.criteria().stream().map(cr -> d.scores().get(cr.code())).toList();
         if (values.isEmpty() || values.stream().anyMatch(Objects::isNull)) {
             return "";
         }
         int sum = values.stream().mapToInt(Integer::intValue).sum();
-        return BigDecimal.valueOf(sum).divide(BigDecimal.valueOf(values.size()), 1, RoundingMode.HALF_UP).toPlainString();
+        return BigDecimal.valueOf(sum).divide(BigDecimal.valueOf(values.size()), 1, RoundingMode.HALF_UP)
+                .toPlainString().replace('.', ',');
     }
 
-    private static String outcome(EvaluationOutcome o) {
-        if (o == null) return EMPTY;
-        return o == EvaluationOutcome.POSITIVE ? "POZYTYWNA" : "NEGATYWNA";
+    private static String personTable(User u, String positionLabel) {
+        return "<table>" + row("Imię", firstName(u)) + row("Nazwisko", lastName(u))
+                + row("Komórka organizacyjna", u.getDepartment()) + row(positionLabel, u.getPositionTitle()) + "</table>";
+    }
+
+    private static String firstName(User u) {
+        if (u.getFirstName() != null) return u.getFirstName();
+        String full = Objects.toString(u.getFullName(), "");
+        int space = full.indexOf(' ');
+        return space > 0 ? full.substring(0, space) : full;
+    }
+
+    private static String lastName(User u) {
+        if (u.getLastName() != null) return u.getLastName();
+        String full = Objects.toString(u.getFullName(), "");
+        int space = full.indexOf(' ');
+        return space > 0 ? full.substring(space + 1) : "";
+    }
+
+    private static String signature(String place, LocalDate date, String who) {
+        return "<div class=\"sign\"><div><b>" + esc(place) + "</b>miejscowość</div><div><b>" + date(date)
+                + "</b>data (dd.mm.rrrr)</div><div><b>&nbsp;</b>" + who + "</div></div>";
     }
 
     private static String row(String label, String value) {
-        return "<tr><td class=\"label\">" + esc(label) + "</td><td>" + esc(value) + "</td></tr>";
+        return "<tr><td class=\"l\">" + esc(label) + "</td><td>" + esc(value) + "</td></tr>";
     }
 
     private static String box(String label, String content) {
-        return "<table><tr><th>" + esc(label) + "</th></tr><tr><td class=\"box\">" + esc(content) + "</td></tr></table>";
-    }
-
-    private static String signatures(String left, String right) {
-        return "<div class=\"sign\"><div>" + esc(left) + "</div><div>" + esc(right) + "</div></div>";
+        return "<table><tr><th>" + esc(label.toUpperCase()) + "</th></tr><tr><td class=\"box\">" + esc(content)
+                + "</td></tr></table>";
     }
 
     private static String date(LocalDate d) {

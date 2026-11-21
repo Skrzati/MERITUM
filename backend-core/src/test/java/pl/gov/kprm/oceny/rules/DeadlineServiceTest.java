@@ -57,6 +57,32 @@ class DeadlineServiceTest {
     }
 
     @Test
+    void kprmExample_sickLeaveAndLeaveSeparatedByWeekendAreOneContinuousAbsence() {
+        // „liczenie terminów” KPRM: L4 5–16.10.2026 (pn–pt) + urlop 19.10–6.11.2026 => nieobecność 5.10–6.11 (> 1 mies.)
+        var sickLeave = new AbsencePeriod(LocalDate.of(2026, 10, 5), LocalDate.of(2026, 10, 16));
+        var leave = new AbsencePeriod(LocalDate.of(2026, 10, 19), LocalDate.of(2026, 11, 6));
+
+        assertThat(deadlines.mergeContinuous(List.of(leave, sickLeave)))
+                .containsExactly(new AbsencePeriod(LocalDate.of(2026, 10, 5), LocalDate.of(2026, 11, 6)));
+        // 2026-03-02 + 24 mies. = 2028-03-02 (czw.) + 33 dni = 2028-04-04 (wt.)
+        assertThat(deadlines.periodicEvaluationDue(LocalDate.of(2026, 3, 2), 24, List.of(sickLeave, leave)))
+                .isEqualTo(LocalDate.of(2028, 4, 4));
+    }
+
+    @Test
+    void absencesSeparatedByWorkingDayAreNotMerged() {
+        var first = new AbsencePeriod(LocalDate.of(2026, 10, 5), LocalDate.of(2026, 10, 15));
+        var second = new AbsencePeriod(LocalDate.of(2026, 10, 19), LocalDate.of(2026, 11, 6)); // 16.10 (pt.) roboczy
+
+        assertThat(deadlines.mergeContinuous(List.of(first, second))).hasSize(2);
+    }
+
+    @Test
+    void appealDecisionDeadlineIs14Days() {
+        assertThat(deadlines.appealDecisionDeadline(LocalDate.of(2026, 11, 17))).isEqualTo(LocalDate.of(2026, 12, 1));
+    }
+
+    @Test
     void reevaluationAfterNegativeIsNotExtendedByAbsence() {
         assertThat(deadlines.reevaluationDue(LocalDate.of(2025, 3, 3))).isEqualTo(LocalDate.of(2025, 9, 3));
     }

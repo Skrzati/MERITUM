@@ -33,6 +33,8 @@ public class HrService {
     private final EmployeeNoteRepository notes;
     private final SchemaVersionRepository schemas;
     private final AuditLogRepository auditLogs;
+    private final EvaluationHistoryRepository history;
+    private final WellbeingSurveyRepository wellbeing;
     private final DeadlineService deadlines;
     private final AuditService audit;
 
@@ -44,7 +46,8 @@ public class HrService {
     }
 
     public record GdprExport(User user, List<EvaluationCycle> cycles, List<EmployeeNote> notes,
-                             List<Absence> absences, List<AuditLog> auditLogs) {
+                             List<Absence> absences, List<EvaluationHistory> evaluationHistory,
+                             List<WellbeingSurvey> wellbeingSurveys, List<AuditLog> auditLogs) {
     }
 
     @Transactional(readOnly = true)
@@ -147,6 +150,8 @@ public class HrService {
         GdprExport export = new GdprExport(employee, own,
                 notes.findByCycleIdInOrAuthorIdOrderByCreatedAtAsc(cycleIds, employee.getId()),
                 absences.findByUserIdOrderByStartDateAsc(employee.getId()),
+                history.findByUserIdOrderByEvaluatedOnAsc(employee.getId()),
+                wellbeing.findByUserIdOrderBySubmittedAtAsc(employee.getId()),
                 auditLogs.findByActorIdOrEntityTypeAndEntityIdInOrderByCreatedAtAsc(employee.getId(),
                         AuditService.CYCLE, cycleIds));
         audit.log(hr, hr.getOfficeId(), "GDPR_EXPORT", AuditService.USER, employee.getId(), Map.of());
@@ -174,6 +179,9 @@ public class HrService {
         User user = new User();
         user.setOfficeId(hr.getOfficeId());
         user.setFullName(name);
+        int space = name.indexOf(' ');
+        user.setFirstName(space > 0 ? name.substring(0, space) : name);
+        user.setLastName(space > 0 ? name.substring(space + 1) : null);
         user.setEmail(email);
         user.setRole(role);
         user.setCivilServant(Boolean.parseBoolean(cols[3].trim()) || "tak".equalsIgnoreCase(cols[3].trim()));

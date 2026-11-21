@@ -5,7 +5,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** Wstrzykuje bieżącego użytkownika (z nagłówka X-Demo-User-Id) do parametru kontrolera. */
+/** Wstrzykuje bieżącego użytkownika (JWT lub X-Demo-User-Id) do parametru kontrolera. */
 @Target(ElementType.PARAMETER)
 @Retention(RetentionPolicy.RUNTIME)
 public @interface CurrentUser {

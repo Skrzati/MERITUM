@@ -13,24 +13,28 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** Weryfikuje konfigurację schematu v1 dokładnie w postaci z migracji V4. */
+/** Weryfikuje konfigurację schematu v1 dokładnie w postaci z migracji V5 (ostatnia wersja v1). */
 class CriteriaCatalogTest {
-    private static final Path V4 = Path.of("src/main/resources/db/migration/V4__fix_v1_criteria_per_sheet.sql");
+    private static final Path V5 = Path.of("src/main/resources/db/migration/V5__kprm_alignment_and_demo_data.sql");
     private static final String JSON_QUOTE = "$json$";
 
     private static CriteriaCatalog v1;
 
     @BeforeAll
     static void loadSchemaFromMigration() throws Exception {
-        String sql = Files.readString(V4);
+        String sql = Files.readString(V5);
         int start = sql.indexOf(JSON_QUOTE) + JSON_QUOTE.length();
         JsonNode config = new ObjectMapper().readTree(sql.substring(start, sql.indexOf(JSON_QUOTE, start)));
         v1 = CriteriaCatalog.from(config);
     }
 
     @Test
-    void catalogHas14Criteria() {
+    void catalogHas14CriteriaWithAnnexDescriptions() throws Exception {
         assertThat(v1.criteria()).hasSize(14);
+        String sql = Files.readString(V5);
+        JsonNode config = new ObjectMapper().readTree(sql.substring(sql.indexOf(JSON_QUOTE) + JSON_QUOTE.length(),
+                sql.indexOf(JSON_QUOTE, sql.indexOf(JSON_QUOTE) + 1)));
+        config.path("criteria").forEach(c -> assertThat(c.path("description").size()).as(c.path("code").asText()).isGreaterThan(1));
     }
 
     @Test

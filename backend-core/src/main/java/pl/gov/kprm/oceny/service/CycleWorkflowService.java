@@ -6,11 +6,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pl.gov.kprm.oceny.domain.*;
+import pl.gov.kprm.oceny.repository.*;
 import pl.gov.kprm.oceny.rules.*;
-import pl.gov.kprm.oceny.repository.EmployeeNoteRepository;
-import pl.gov.kprm.oceny.repository.EvaluationCycleRepository;
-import pl.gov.kprm.oceny.repository.SchemaVersionRepository;
-import pl.gov.kprm.oceny.repository.UserRepository;
 
 import java.math.RoundingMode;
 import java.time.Clock;
@@ -32,6 +29,9 @@ public class CycleWorkflowService {
     private final EmployeeNoteRepository notes;
     private final SchemaVersionRepository schemas;
     private final UserRepository users;
+    private final OfficeRepository offices;
+    private final AbsenceRepository absences;
+    private final EvaluationHistoryService history;
     private final EvaluationRuleEngine engine;
     private final DeadlineService deadlines;
     private final AuditService audit;
@@ -58,15 +58,61 @@ public class CycleWorkflowService {
         return cycle;
     }
 
-    public EvaluationCycle setCriteria(Long id, User user, List<Criterion> requested) {
+    /**
+     * Nowy cykl zawsze przypina najnowszą obowiązującą wersję schematu, a termin wylicza z jej okresu oceny
+     * (lub 6 miesięcy przy ponownej ocenie po negatywnej — art. 81 ust. 9).
+     */
+    public EvaluationCycle create(User user, Long employeeId, SheetType sheetType, LocalDate startDate, boolean reevaluation) {
+        User employee = users.findById(employeeId).orElseThrow(() -> notFound("Użytkownik", employeeId));
+        requireSameOffice(user, employee.getOfficeId());
+        boolean hr = user.getRole() == Role.HR;
+        boolean supervisor = user.getId().equals(employee.getSupervisorId());
+        if (!hr && !supervisor) {
+            throw forbidden("Cykl tworzy kadra lub bezpośredni przełożony ocenianego");
+        }
+        if (employee.getSupervisorId() == null) {
+            throw conflict("Pracownik nie ma przypisanego bezpośredniego przełożonego");
+        }
+        if (cycles.findByEmployeeIdOrderByIdAsc(employeeId).stream().anyMatch(c -> c.getStatus().isActive())) {
+            throw conflict("Pracownik ma już aktywny cykl oceny");
+        }
+        LocalDate start = startDate != null ? startDate : LocalDate.now(clock);
+        SchemaVersion schema = schemas.findFirstByEffectiveFromLessThanEqualOrderByEffectiveFromDescIdDesc(start)
+                .orElseThrow(() -> conflict("Brak obowiązującej wersji schematu oceny"));
+        List<AbsencePeriod> periods = absences.findByUserIdOrderByStartDateAsc(employeeId).stream()
+                .map(a -> new AbsencePeriod(a.getStartDate(), a.getEndDate())).toList();
+
+        EvaluationCycle cycle = new EvaluationCycle();
+        cycle.setOfficeId(employee.getOfficeId());
+        cycle.setEmployeeId(employeeId);
+        cycle.setEvaluatorId(employee.getSupervisorId());
+        cycle.setSchemaVersionId(schema.getId());
+        cycle.setSheetType(sheetType != null ? sheetType : defaultSheet(employee));
+        cycle.setStatus(CycleStatus.DRAFT_CRITERIA);
+        cycle.setStartDate(start);
+        cycle.setReevaluation(reevaluation);
+        cycle.setDueDate(reevaluation ? deadlines.reevaluationDue(start)
+                : deadlines.periodicEvaluationDue(start, schema.getPeriodMonths(), periods));
+        cycle.setPlace(officeCity(employee.getOfficeId()));
+        EvaluationCycle saved = cycles.saveAndFlush(cycle);
+        audit.log(user, saved.getOfficeId(), "CYCLE_CREATED", AuditService.CYCLE, saved.getId(),
+                payload("employeeId", employeeId, "schemaVersion", schema.getVersionCode(),
+                        "periodMonths", schema.getPeriodMonths(), "dueDate", saved.getDueDate(),
+                        "reevaluation", reevaluation));
+        return saved;
+    }
+
+    public EvaluationCycle setCriteria(Long id, User user, List<Criterion> requested, LocalDate interviewDate) {
         EvaluationCycle cycle = asEvaluator(id, user);
         requireStatus(cycle, CycleStatus.DRAFT_CRITERIA);
         SchemaVersion schema = schemas.findById(cycle.getSchemaVersionId())
                 .orElseThrow(() -> notFound("Schemat", cycle.getSchemaVersionId()));
         List<Criterion> all = CriteriaCatalog.from(schema.getConfigJson()).select(cycle.getSheetType(), requested);
         cycle.setCriteriaJson(json.valueToTree(all));
+        cycle.setCriteriaInterviewDate(interviewDate != null ? interviewDate : LocalDate.now(clock));
         audit.log(user, cycle.getOfficeId(), "CRITERIA_SET", AuditService.CYCLE, cycle.getId(),
-                Map.of("criteria", all.stream().map(Criterion::code).toList()));
+                Map.of("criteria", all.stream().map(Criterion::code).toList(),
+                        "interviewDate", cycle.getCriteriaInterviewDate()));
         return cycle;
     }
 
@@ -75,6 +121,7 @@ public class CycleWorkflowService {
         if (criteriaOf(cycle).isEmpty()) {
             throw conflict("Przełożony nie ustalił jeszcze kryteriów");
         }
+        cycle.setCriteriaConfirmedOn(LocalDate.now(clock));
         transition(cycle, user, CycleStatus.OBSERVATION, "CRITERIA_CONFIRMED", Map.of());
         return cycle;
     }
@@ -112,18 +159,27 @@ public class CycleWorkflowService {
     }
 
     public EvaluationResult evaluate(Long id, User user, Map<String, Integer> scores, String justification,
-                                     String iprzNotes, GradeRequest gradeRequest, boolean submit) {
+                                     String iprzNotes, GradeRequest gradeRequest, LocalDate interviewDate,
+                                     boolean submit) {
         EvaluationCycle cycle = asEvaluator(id, user);
         cycle.setScoresJson(json.valueToTree(scores));
         cycle.setJustification(justification);
         cycle.setIprzNotes(iprzNotes);
         cycle.setGradeRequestJson(gradeRequest == null ? null : json.valueToTree(gradeRequest));
+        if (interviewDate != null) {
+            cycle.setEvaluationInterviewDate(interviewDate);
+        }
         if (!submit) {
             engine.validateScale(scores);
             transition(cycle, user, CycleStatus.EVALUATION_DRAFT, "EVALUATION_DRAFT_SAVED", Map.of());
             return null;
         }
         EvaluationResult result = assessOrThrow(cycle, scores, justification, iprzNotes, gradeRequest);
+        LocalDate today = LocalDate.now(clock);
+        cycle.setEvaluatedOn(today);
+        if (cycle.getEvaluationInterviewDate() == null) {
+            cycle.setEvaluationInterviewDate(today);
+        }
         applyResult(cycle, result);
         transition(cycle, user, CycleStatus.AWAITING_ACK, "EVALUATION_SUBMITTED", resultPayload(result));
         return result;
@@ -136,6 +192,7 @@ public class CycleWorkflowService {
         cycle.setAppealDeadline(deadlines.appealDeadline(today));
         transition(cycle, user, CycleStatus.COMPLETED, "EVALUATION_ACKNOWLEDGED",
                 Map.of("appealDeadline", cycle.getAppealDeadline()));
+        history.recordCompleted(cycle);
         return cycle;
     }
 
@@ -155,20 +212,25 @@ public class CycleWorkflowService {
         cycle.setAppealDeadline(deadlines.appealDeadline(date));
         transition(cycle, user, CycleStatus.COMPLETED, "ACKNOWLEDGEMENT_REFUSED",
                 Map.of("reason", reason, "date", date, "appealDeadline", cycle.getAppealDeadline()));
+        history.recordCompleted(cycle);
         return cycle;
     }
 
     public EvaluationCycle appeal(Long id, User user, String content) {
         EvaluationCycle cycle = asEmployee(id, user);
-        if (cycle.getAppealDeadline() != null && LocalDate.now(clock).isAfter(cycle.getAppealDeadline())) {
+        LocalDate today = LocalDate.now(clock);
+        if (cycle.getAppealDeadline() != null && today.isAfter(cycle.getAppealDeadline())) {
             throw conflict("Termin na złożenie sprzeciwu upłynął " + cycle.getAppealDeadline());
         }
         cycle.setAppealText(content);
         cycle.setAppealedAt(OffsetDateTime.now(clock));
-        transition(cycle, user, CycleStatus.APPEALED, "APPEAL_FILED", Map.of());
+        cycle.setAppealDecisionDeadline(deadlines.appealDecisionDeadline(today));
+        transition(cycle, user, CycleStatus.APPEALED, "APPEAL_FILED",
+                Map.of("decisionDeadline", cycle.getAppealDecisionDeadline()));
         return cycle;
     }
 
+    /** Art. 83 ust. 4: w razie uwzględnienia sprzeciwu ocenę zmienia się albo sporządza po raz drugi. */
     public EvaluationCycle decideAppeal(Long id, User user, DgDecision decision, String comment,
                                         Map<String, Integer> scores, String justification, String iprzNotes) {
         EvaluationCycle cycle = load(id);
@@ -180,6 +242,10 @@ public class CycleWorkflowService {
         cycle.setDgDecidedAt(OffsetDateTime.now(clock));
 
         if (decision == DgDecision.REDO) {
+            history.removeForCycle(cycle.getId());
+            cycle.setEvaluatedOn(null);
+            cycle.setAcknowledgedAt(null);
+            cycle.setAppealDeadline(null);
             transition(cycle, user, CycleStatus.EVALUATION_DRAFT, "APPEAL_DECIDED",
                     payload("decision", decision, "comment", comment));
             return cycle;
@@ -200,7 +266,14 @@ public class CycleWorkflowService {
         p.put("decision", decision);
         p.put("comment", comment);
         transition(cycle, user, CycleStatus.COMPLETED, "APPEAL_DECIDED", p);
+        history.recordCompleted(cycle);
         return cycle;
+    }
+
+    /** Termin na ustalenie kryteriów (§ 7): 30 dni od rozpoczęcia cyklu albo 7 dni po ocenie negatywnej. */
+    @Transactional(readOnly = true)
+    public LocalDate criteriaDeadline(EvaluationCycle cycle) {
+        return deadlines.initialInterviewDeadline(cycle.getStartDate(), cycle.isReevaluation());
     }
 
     private EvaluationResult assessOrThrow(EvaluationCycle cycle, Map<String, Integer> scores, String justification,
@@ -208,7 +281,7 @@ public class CycleWorkflowService {
         User employee = users.findById(cycle.getEmployeeId())
                 .orElseThrow(() -> notFound("Użytkownik", cycle.getEmployeeId()));
         EvaluationResult result = engine.assess(new EvaluationInput(criteriaOf(cycle), scores, justification,
-                iprzNotes, grade, employee.isCivilServant()));
+                iprzNotes, grade, employee.isCivilServant(), employee.getCivilServiceGrade()));
         if (!result.isValid()) {
             throw new RuleViolationException(result.violations(), result);
         }
@@ -226,8 +299,7 @@ public class CycleWorkflowService {
         return payload("average", r.averageDisplay(), "level", r.level(), "outcome", r.outcome());
     }
 
-    private void transition(EvaluationCycle cycle, User actor, CycleStatus target, String action,
-                            Map<String, ?> extra) {
+    void transition(EvaluationCycle cycle, User actor, CycleStatus target, String action, Map<String, ?> extra) {
         CycleStatus from = cycle.getStatus();
         if (!from.canTransitionTo(target)) {
             throw conflict("Niedozwolone przejście " + from + " -> " + target);
@@ -239,7 +311,7 @@ public class CycleWorkflowService {
         audit.log(actor, cycle.getOfficeId(), action, AuditService.CYCLE, cycle.getId(), p);
     }
 
-    private List<Criterion> criteriaOf(EvaluationCycle cycle) {
+    List<Criterion> criteriaOf(EvaluationCycle cycle) {
         if (cycle.getCriteriaJson() == null) {
             return List.of();
         }
@@ -247,11 +319,11 @@ public class CycleWorkflowService {
         });
     }
 
-    private EvaluationCycle load(Long id) {
+    EvaluationCycle load(Long id) {
         return cycles.findById(id).orElseThrow(() -> notFound("Cykl", id));
     }
 
-    private EvaluationCycle asEvaluator(Long id, User user) {
+    EvaluationCycle asEvaluator(Long id, User user) {
         EvaluationCycle cycle = load(id);
         if (!user.getId().equals(cycle.getEvaluatorId())) {
             throw forbidden("Operację wykonuje wyłącznie oceniający");
@@ -259,7 +331,7 @@ public class CycleWorkflowService {
         return cycle;
     }
 
-    private EvaluationCycle asEmployee(Long id, User user) {
+    EvaluationCycle asEmployee(Long id, User user) {
         EvaluationCycle cycle = load(id);
         if (!user.getId().equals(cycle.getEmployeeId())) {
             throw forbidden("Operację wykonuje wyłącznie oceniany");
@@ -267,17 +339,25 @@ public class CycleWorkflowService {
         return cycle;
     }
 
+    private String officeCity(Long officeId) {
+        return offices.findById(officeId).map(Office::getCity).orElse(null);
+    }
+
+    private static SheetType defaultSheet(User employee) {
+        return employee.getRole() == Role.EVALUATOR || employee.getRole() == Role.DG ? SheetType.B : SheetType.C;
+    }
+
     private static boolean isParty(EvaluationCycle cycle, User user) {
         return user.getId().equals(cycle.getEmployeeId()) || user.getId().equals(cycle.getEvaluatorId());
     }
 
-    private static void requireStatus(EvaluationCycle cycle, CycleStatus expected) {
+    static void requireStatus(EvaluationCycle cycle, CycleStatus expected) {
         if (cycle.getStatus() != expected) {
             throw conflict("Wymagany status " + expected + ", obecny " + cycle.getStatus());
         }
     }
 
-    private static Map<String, Object> payload(Object... kv) {
+    static Map<String, Object> payload(Object... kv) {
         Map<String, Object> map = new LinkedHashMap<>();
         for (int i = 0; i < kv.length; i += 2) {
             map.put((String) kv[i], kv[i + 1]);

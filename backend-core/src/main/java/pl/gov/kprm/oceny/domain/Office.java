@@ -14,4 +14,5 @@ public class Office {
     private Long id;
     private String name;
     private boolean hasDgRole;
+    private String city;
 }

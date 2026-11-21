@@ -21,3 +21,13 @@ springdoc:
     path: /swagger-ui.html
 app:
   gotenberg-url: ${GOTENBERG_URL:http://localhost:3001/forms/chromium/convert/html}
+  ai-gateway-url: ${AI_GATEWAY_URL:http://localhost:8000}
+  jwt:
+    # min. 32 bajty; pusty => losowy klucz na czas życia procesu (tylko demo)
+    secret: ${JWT_SECRET:}
+    ttl-minutes: ${JWT_TTL_MINUTES:480}
+  auth:
+    # nagłówek X-Demo-User-Id (testy/Swagger); w produkcji wyłączyć
+    demo-header-enabled: ${DEMO_HEADER_ENABLED:true}
+  stats:
+    k-anonymity: ${STATS_K_ANONYMITY:5}

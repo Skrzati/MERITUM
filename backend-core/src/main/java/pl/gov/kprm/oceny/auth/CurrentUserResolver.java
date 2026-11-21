@@ -21,9 +21,9 @@ public class CurrentUserResolver implements HandlerMethodArgumentResolver {
     @Override
     public Object resolveArgument(MethodParameter p, ModelAndViewContainer mav, NativeWebRequest req,
                                   WebDataBinderFactory binder) {
-        Object user = req.getAttribute(DemoUserFilter.ATTR, RequestAttributes.SCOPE_REQUEST);
+        Object user = req.getAttribute(CurrentUserFilter.ATTR, RequestAttributes.SCOPE_REQUEST);
         if (user == null) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing " + DemoUserFilter.HEADER);
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Wymagane uwierzytelnienie (Bearer JWT lub " + CurrentUserFilter.DEMO_HEADER + ")");
         }
         return user;
     }

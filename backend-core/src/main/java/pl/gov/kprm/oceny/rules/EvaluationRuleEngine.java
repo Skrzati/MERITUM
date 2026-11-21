@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 public class EvaluationRuleEngine {
     public static final Set<Integer> ALLOWED_SCORES = Set.of(1, 3, 5, 7, 9);
     private static final int DISQUALIFYING_SCORE = 1;
+    public static final int HIGHEST_GRADE = 9;
 
     public void validateScale(Map<String, Integer> scores) {
         List<String> violations = scaleViolations(scores);
@@ -80,6 +81,12 @@ public class EvaluationRuleEngine {
             }
             if (isBlank(grade.motivation())) {
                 violations.add("Wniosek o stopień służbowy wymaga umotywowania");
+            }
+            if (outcome == EvaluationOutcome.NEGATIVE) {
+                violations.add("Wniosek o kolejny stopień służbowy można dołączyć wyłącznie do oceny pozytywnej (§ 11 ust. 5)");
+            }
+            if (in.civilServiceGrade() != null && in.civilServiceGrade() >= HIGHEST_GRADE) {
+                violations.add("Ocenianemu nie można przyznać kolejnego stopnia służbowego. Oceniany posiada już najwyższy możliwy stopień służbowy");
             }
         }
         return violations;

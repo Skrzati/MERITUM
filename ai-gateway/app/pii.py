@@ -19,6 +19,15 @@ UNIT_RE = re.compile(
 )
 
 HONORIFICS = {"Pan", "Pani", "Pana", "Panu", "Panią", "Panem", "Panie"}
+# Tytuły/stanowiska po „Pan/Pani” nie są nazwiskami („Pan Dyrektor Przykład” -> osoba = Przykład).
+TITLES = {
+    f"{base}{suffix}"
+    for base in ("Dyrektor", "Naczelnik", "Kierownik", "Prezes", "Inspektor", "Specjalist", "Radc", "Minister",
+                 "Wojewod", "Starost", "Komendant", "Doktor", "Profesor", "Mecenas", "Sędzi", "Sekretarz", "Zastępc")
+    for suffix in ("", "a", "e", "em", "owi", "ze", "y", "ą", "o", "u")
+}
+_TITLES_RE = re.compile(r"\b(?:" + "|".join(sorted(TITLES, key=len, reverse=True)) + r")\b")
+MAX_TITLE_GAP = 30
 FIRST_NAMES = {
     "Anna", "Maria", "Katarzyna", "Małgorzata", "Agnieszka", "Barbara", "Ewa", "Krystyna", "Elżbieta",
     "Magdalena", "Joanna", "Zofia", "Monika", "Aleksandra", "Natalia", "Karolina", "Marta", "Beata", "Dorota",
@@ -30,12 +39,22 @@ FIRST_NAMES = {
     "Szymon", "Filip", "Damian", "Dawid", "Przemysław", "Artur", "Sławomir", "Janusz", "Roman", "Antoni",
     "Wiktor", "Oskar", "Ewelina", "Kamila", "Marzena", "Grażyna", "Bożena", "Urszula", "Wanda", "Edyta",
 }
-MAX_INFLECTION_SUFFIX = 4
+# Końcówki fleksyjne imion i nazwisk po odcięciu rdzenia (po _fold: ą/ę -> e, ó -> o).
+DECLENSION_ENDINGS = {
+    "", "a", "e", "i", "y", "u", "o", "em", "om", "ie", "owi", "ow", "owie", "ami", "ach", "iem", "iej", "iego",
+    "iemu", "im", "ich", "ej", "ego", "emu", "ym", "ych", "ze", "ce", "la", "lem", "lowi", "le", "ka", "kiem", "kowi",
+    "ku", "ła", "łem", "łowi",
+}
+
+
+def _fold(word: str) -> str:
+    """Wyrównanie oboczności w odmianie nazwisk: ó/o (Wzór -> Wzora), ą/ę (Dąb -> Dęba)."""
+    return word.lower().replace("ó", "o").replace("ą", "e").replace("ę", "e")
 
 
 def _stem(word: str) -> str:
     """Prosty rdzeń do dopasowania form odmienionych (Kowalska -> kowalsk, Paweł -> paw, Marek -> mar)."""
-    w = word.lower()
+    w = _fold(word)
     if len(w) >= 4 and (w.endswith("eł") or w.endswith("ek")):
         return w[:-2]
     if len(w) >= 3 and w[-1] in "aeiouyąę":
@@ -44,8 +63,9 @@ def _stem(word: str) -> str:
 
 
 def _inflects(word: str, base: str) -> bool:
-    stem, w = _stem(base), word.lower()
-    return w.startswith(stem) and len(w) - len(stem) <= MAX_INFLECTION_SUFFIX
+    """Czy słowo jest formą odmienioną imienia/nazwiska (Kowal -> Kowala, ale nie Kowalika)."""
+    stem, w = _stem(base), _fold(word)
+    return w.startswith(stem) and w[len(stem):] in DECLENSION_ENDINGS
 
 
 def is_first_name(word: str) -> bool:
@@ -110,7 +130,8 @@ class PiiMasker:
         return spans
 
     def _person_spans(self, text: str, taken: List[_Span]) -> List[_Span]:
-        words = [m for m in CAP_WORD_RE.finditer(text) if not any(t.start <= m.start() < t.end for t in taken)]
+        words = [m for m in CAP_WORD_RE.finditer(text)
+                 if m.group() not in TITLES and not any(t.start <= m.start() < t.end for t in taken)]
         spans: List[_Span] = []
         i = 0
         while i < len(words):
@@ -124,8 +145,14 @@ class PiiMasker:
                 spans.append(_Span(w.start(), end, "OSOBA", known, self.mapping_name(known)))
                 self.detected_persons.append(DetectedPerson(text[w.start():end], True))
             elif w.group() in HONORIFICS and nxt and not self._known_owner(nxt.group()):
-                spans.append(self._auto_person(text, nxt, nxt))
-                i += 1
+                # „Pana Adama Kowalika” — po zwrocie grzecznościowym imię i nazwisko albo samo nazwisko
+                after = words[i + 2] if i + 2 < len(words) and _adjacent(text, nxt, words[i + 2]) else None
+                if after and is_first_name(nxt.group()) and not self._known_owner(after.group()):
+                    spans.append(self._auto_person(text, nxt, after))
+                    i += 2
+                else:
+                    spans.append(self._auto_person(text, nxt, nxt))
+                    i += 1
             elif is_first_name(w.group()):
                 last = nxt if nxt and nxt.group() not in HONORIFICS and not self._known_owner(nxt.group()) else None
                 spans.append(self._auto_person(text, w, last or w))
@@ -169,8 +196,11 @@ class PiiMasker:
 
 
 def _adjacent(text: str, a, b) -> bool:
+    """Słowa sąsiadują, jeśli dzieli je tylko spacja (lub tytuł, np. „Pan Dyrektor Kowalski”)."""
     gap = text[a.end():b.start()]
-    return 0 < len(gap) <= 2 and gap.strip() == ""
+    if 0 < len(gap) <= 2 and gap.strip() == "":
+        return True
+    return 0 < len(gap) <= MAX_TITLE_GAP and _TITLES_RE.sub("", gap).strip() == "" and _TITLES_RE.search(gap) is not None
 
 
 @dataclass

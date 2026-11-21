@@ -7,7 +7,7 @@ from . import assistants, consistency
 from .guardrails import AI_DISCLAIMER
 from .llm import LLMClient
 
-app = FastAPI(title="MERITUM AI & Privacy Gateway", version="0.3.0")
+app = FastAPI(title="MERITUM AI & Privacy Gateway", version="0.5.0")
 llm = LLMClient()
 
 
@@ -69,6 +69,41 @@ class HrPartnerResponse(BaseModel):
     mode: str
 
 
+class InterviewPrepRequest(BaseModel):
+    employee_name: str
+    sheet_type: Literal["A", "B", "C"]
+    stage: Literal["INITIAL", "EVALUATION"]
+    criteria_scores: List[CriterionScoreIn] = Field(default_factory=list)
+    notes: List[str] = Field(default_factory=list)
+
+
+class AgendaItem(BaseModel):
+    topic: str
+    legal_basis: str
+    questions: List[str]
+
+
+class DifficultSituation(BaseModel):
+    situation: str
+    tip: str
+
+
+class DevelopmentEntry(BaseModel):
+    criterion: str
+    actions: List[str]
+
+
+class InterviewPrepResponse(BaseModel):
+    masked_prompt: str
+    stage: str
+    goal: str
+    agenda: List[AgendaItem]
+    difficult_situations: List[DifficultSituation]
+    development_catalog: List[DevelopmentEntry]
+    ai_disclaimer: str = AI_DISCLAIMER
+    mode: str
+
+
 @app.get("/health")
 def health() -> Dict[str, str]:
     return {"status": "UP", "service": "ai-gateway", "llm_mode": llm.mode, "llm_model": llm.model}
@@ -90,3 +125,9 @@ def consistency_check(req: ConsistencyRequest) -> ConsistencyResponse:
 @app.post("/api/ai/hr-partner", response_model=HrPartnerResponse)
 def hr_partner(req: HrPartnerRequest) -> Dict:
     return assistants.hr_partner(llm, req.notes, req.workload_signals)
+
+
+@app.post("/api/ai/interview-prep", response_model=InterviewPrepResponse)
+def interview_prep(req: InterviewPrepRequest) -> Dict:
+    criteria = [assistants.CriterionScore(c.name, c.score, c.code) for c in req.criteria_scores]
+    return assistants.interview_prep(llm, req.employee_name, req.sheet_type, req.stage, criteria, req.notes)

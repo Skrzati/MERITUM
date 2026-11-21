@@ -5,6 +5,8 @@ import org.springframework.stereotype.Component;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.MonthDay;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -16,6 +18,14 @@ public class DeadlineService {
     public static final int INITIAL_INTERVIEW_DAYS = 30;
     public static final int INITIAL_INTERVIEW_AFTER_NEGATIVE_DAYS = 7;
     public static final int APPEAL_DAYS = 7;
+    /** Art. 83 ust. 3 — sprzeciw rozpatruje się w terminie 14 dni od dnia wniesienia. */
+    public static final int APPEAL_DECISION_DAYS = 14;
+    /** Art. 89 ust. 2 — obligatoryjny stopień w terminie 30 dni od zapoznania z oceną. */
+    public static final int MANDATORY_GRADE_DAYS = 30;
+    /** § 9 ust. 1 i ust. 2 — 30 dni od zmiany stanowiska. */
+    public static final int SCOPE_CHANGE_DAYS = 30;
+    /** Art. 81 ust. 6 i ust. 8 — próg 6 miesięcy. */
+    public static final int SIX_MONTHS = 6;
 
     private static final Set<MonthDay> FIXED_HOLIDAYS = Set.of(
             MonthDay.of(1, 1), MonthDay.of(1, 6), MonthDay.of(5, 1), MonthDay.of(5, 3), MonthDay.of(8, 15),
@@ -47,12 +57,49 @@ public class DeadlineService {
     /** Ocena okresowa: art. 81 ust. 7 — ciągła nieobecność > 1 miesiąca przedłuża termin o czas nieobecności. */
     public LocalDate periodicEvaluationDue(LocalDate start, int periodMonths, List<AbsencePeriod> absences) {
         LocalDate base = start.plusMonths(periodMonths);
-        long extension = absences.stream()
+        long extension = mergeContinuous(absences).stream()
                 .filter(AbsencePeriod::isLongerThanOneMonth)
                 .filter(a -> a.overlaps(start, base))
                 .mapToLong(AbsencePeriod::days)
                 .sum();
         return shiftToWorkingDay(base.plusDays(extension));
+    }
+
+    /**
+     * Nieobecność ciągła (zasady KPRM „liczenie terminów”): kolejne okresy usprawiedliwionej nieobecności, między którymi
+     * wypadają wyłącznie dni wolne od pracy (sobota, niedziela, święto), stanowią jedną nieobecność.
+     */
+    public List<AbsencePeriod> mergeContinuous(List<AbsencePeriod> absences) {
+        List<AbsencePeriod> sorted = absences.stream().sorted(Comparator.comparing(AbsencePeriod::start)).toList();
+        List<AbsencePeriod> merged = new ArrayList<>();
+        for (AbsencePeriod next : sorted) {
+            int last = merged.size() - 1;
+            if (last >= 0 && onlyDaysOffBetween(merged.get(last).end(), next.start())) {
+                AbsencePeriod current = merged.get(last);
+                LocalDate end = next.end().isAfter(current.end()) ? next.end() : current.end();
+                merged.set(last, new AbsencePeriod(current.start(), end));
+            } else {
+                merged.add(next);
+            }
+        }
+        return merged;
+    }
+
+    private boolean onlyDaysOffBetween(LocalDate endOfFirst, LocalDate startOfNext) {
+        for (LocalDate d = endOfFirst.plusDays(1); d.isBefore(startOfNext); d = d.plusDays(1)) {
+            if (isWorkingDay(d)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public LocalDate appealDecisionDeadline(LocalDate appealedOn) {
+        return shiftToWorkingDay(appealedOn.plusDays(APPEAL_DECISION_DAYS));
+    }
+
+    public LocalDate mandatoryGradeDeadline(LocalDate acknowledgedAt) {
+        return shiftToWorkingDay(acknowledgedAt.plusDays(MANDATORY_GRADE_DAYS));
     }
 
     /** Ponowna ocena po negatywnej — 6 miesięcy, nieobecności NIE przedłużają terminu. */

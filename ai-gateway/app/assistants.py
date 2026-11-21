@@ -3,6 +3,7 @@ import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
+from .catalog import DEVELOPMENT_ACTIONS
 from .guardrails import clean_list, strip_medical_content, strip_score_proposals
 from .llm import MODE_FALLBACK, MODE_MOCK, LLMClient
 from .pii import PiiMasker, unmask_pii
@@ -165,3 +166,114 @@ def _mock_hr(notes: List[str], signals: Dict[str, float], burnout: bool):
     appreciation = (f"Warto docenić wprost: {_snippet(positive)}" if positive
                     else "Warto docenić konkretny niedawny wkład pracownika w realizację zadań zespołu.")
     return starters, suggestions, appreciation
+
+
+# ---------------------------------------------------------------- przygotowanie do rozmów (§ 5 ust. 1, § 10)
+
+STAGE_INITIAL, STAGE_EVALUATION = "INITIAL", "EVALUATION"
+MAX_DEVELOPMENT_CRITERIA = 4
+
+INTERVIEW_SYSTEM = (
+    "Jesteś asystentem przełożonego w służbie cywilnej. Przygotowujesz plan rozmowy w ramach oceny okresowej "
+    "zgodnie z § 5 ust. 1 (rozmowa rozpoczynająca, 4 zagadnienia) albo § 10 (rozmowa oceniająca, 3 zagadnienia) "
+    "rozporządzenia PRM z 4.04.2016. NIGDY nie proponujesz punktów ani oceny. Odpowiadasz wyłącznie JSON: "
+    "{\"goal\": \"..\", \"agenda\": [{\"topic\": \"..\", \"legal_basis\": \"..\", \"questions\": [..]}], "
+    "\"difficult_situations\": [{\"situation\": \"..\", \"tip\": \"..\"}]}. Zachowuj tokeny [..] bez zmian."
+)
+
+
+def interview_prep(llm: LLMClient, employee_name: str, sheet_type: str, stage: str, criteria: List[CriterionScore],
+                   notes: List[str]) -> Dict:
+    masker = PiiMasker(known_names=[employee_name])
+    person = masker.mask(employee_name)
+    masked_notes = [masker.mask(n) for n in notes]
+    kind = "rozpoczynająca (§ 5 ust. 1)" if stage == STAGE_INITIAL else "oceniająca (§ 10)"
+    criteria_lines = "\n".join(f"- {c.name}" + (f": {c.score}" if c.score is not None else "") for c in criteria)
+    notes_lines = "\n".join(f"- {n}" for n in masked_notes) or "- (brak notatek)"
+    prompt = (f"Rozmowa: {kind}\nOceniany: {person}\nArkusz: {sheet_type}\nKryteria:\n{criteria_lines or '- (brak)'}\n"
+              f"Notatki z okresu oceny:\n{notes_lines}\nPrzygotuj cel rozmowy, agendę z pytaniami i wskazówki.")
+
+    answer = llm.chat_json(INTERVIEW_SYSTEM, prompt)
+    if answer and isinstance(answer.get("agenda"), list) and answer.get("goal"):
+        mode = llm.mode
+        goal, agenda = str(answer["goal"]), answer["agenda"]
+        situations = answer.get("difficult_situations") or []
+    else:
+        mode = MODE_MOCK if llm.mode == MODE_MOCK else MODE_FALLBACK
+        goal, agenda, situations = _mock_interview(stage, criteria, masked_notes)
+
+    unmask = lambda s: unmask_pii(str(s), masker.mapping)  # noqa: E731
+    clean_agenda = [{
+        "topic": unmask(item.get("topic", "")),
+        "legal_basis": str(item.get("legal_basis", "")),
+        "questions": [unmask(q) for q in clean_list(item.get("questions", []), strip_score_proposals)],
+    } for item in agenda if isinstance(item, dict)]
+    clean_situations = [{"situation": unmask(s.get("situation", "")), "tip": unmask(strip_medical_content(str(s.get("tip", ""))))}
+                        for s in situations if isinstance(s, dict)]
+    return {
+        "masked_prompt": prompt,
+        "stage": stage,
+        "goal": unmask(goal),
+        "agenda": clean_agenda,
+        "difficult_situations": [s for s in clean_situations if s["tip"]],
+        "development_catalog": _development_catalog(criteria),
+        "mode": mode,
+    }
+
+
+def _mock_interview(stage: str, criteria: List[CriterionScore], notes: List[str]):
+    names = [c.name for c in criteria]
+    if stage == STAGE_INITIAL:
+        goal = "Wspólne ustalenie obowiązków, kryteriów i oczekiwań na cały okres oceny oraz celów do osiągnięcia."
+        agenda = [
+            {"topic": "Główne obowiązki wynikające z opisu stanowiska pracy", "legal_basis": "§ 5 ust. 1 pkt 1",
+             "questions": ["Które zadania z opisu stanowiska zajmują obecnie najwięcej czasu?",
+                           "Czy opis stanowiska odpowiada faktycznie wykonywanym zadaniom? Co wymaga aktualizacji?"]},
+            {"topic": "Kryteria obowiązkowe i wybrane kryteria dodatkowe", "legal_basis": "§ 5 ust. 1 pkt 2",
+             "questions": ["Jak rozumiesz kryteria: " + ", ".join(names) + "?" if names else
+                           "Które kryteria z katalogu najlepiej opisują kluczowe zadania na stanowisku?",
+                           "Dlaczego wybrane kryteria dodatkowe są najistotniejsze dla tego stanowiska?"]},
+            {"topic": "Oczekiwania co do sposobu spełniania kryteriów", "legal_basis": "§ 5 ust. 1 pkt 3",
+             "questions": [f"Jak w codziennej pracy wygląda spełnianie kryterium „{n}” na poziomie oczekiwań?"
+                           for n in names[:3]] or ["Jakie zachowania będą świadczyć o spełnianiu oczekiwań?"]},
+            {"topic": "Cele do osiągnięcia w okresie oceny i sposób ich realizacji", "legal_basis": "§ 5 ust. 1 pkt 4",
+             "questions": ["Jakie 2–3 cele są realne i mierzalne w perspektywie najbliższych 24 miesięcy?",
+                           "Jakiego wsparcia potrzebujesz, aby je zrealizować, i jak będziemy monitorować postęp?"]},
+        ]
+    else:
+        goal = "Omówienie sposobu wykonywania obowiązków i realizacji celów oraz ustalenie kierunków rozwoju przed sporządzeniem oceny."
+        low = [c.name for c in criteria if c.score is not None and c.score <= 3]
+        high = [c.name for c in criteria if c.score is not None and c.score >= 7]
+        questions = ["Które zadania z okresu oceny uważasz za swoje największe osiągnięcia?"]
+        questions += [f"Co wpłynęło na wyniki w kryterium „{n}” i czego potrzebujesz, aby je poprawić?" for n in low]
+        questions += [f"Jak możemy wykorzystać Twoje mocne strony w kryterium „{n}” w zespole?" for n in high]
+        agenda = [
+            {"topic": "Główne obowiązki i sposób ich realizacji z uwzględnieniem kryteriów", "legal_basis": "§ 10 pkt 1",
+             "questions": questions},
+            {"topic": "Realizacja celów wyznaczonych na okres oceny", "legal_basis": "§ 10 pkt 2",
+             "questions": ["Które z ustalonych celów udało się zrealizować, a które nie — i dlaczego?",
+                           "Jakie okoliczności (zmiany zadań, nieobecności, zastępstwa) wpłynęły na realizację celów?"]},
+            {"topic": "Kierunki dalszego rozwoju zawodowego i potrzeby szkoleniowe", "legal_basis": "§ 10 pkt 3",
+             "questions": ["Jakie kompetencje chcesz rozwijać w kolejnym okresie?",
+                           "Jakie formy rozwoju są dla Ciebie najskuteczniejsze (szkolenie, mentoring, nowe zadania)?"]},
+        ]
+    situations = [
+        {"situation": "Oceniany nie zgadza się z oceną lub reaguje emocjonalnie",
+         "tip": "Odwołuj się do konkretnych faktów i dat z notatek, oddziel ocenę zachowań od oceny osoby, daj czas na "
+                "odpowiedź i poinformuj o prawie do sprzeciwu do dyrektora generalnego w 7 dni (art. 83 ust. 1)."},
+        {"situation": "Oceniany ocenia swoje wyniki znacznie wyżej niż przełożony",
+         "tip": "Zapytaj o przykłady, które to potwierdzają, i porównaj je z ustalonymi na początku oczekiwaniami."},
+    ]
+    if any(OVERLOAD_RE.search(n) for n in notes):
+        situations.append({"situation": "W notatkach są sygnały przeciążenia (nadgodziny, zastępstwa)",
+                           "tip": "Zapytaj o obciążenie i uwzględnij w ocenie okoliczności niezależne od ocenianego; "
+                                  "zaproponuj zmianę priorytetów lub podział zadań."})
+    return goal, agenda, situations
+
+
+def _development_catalog(criteria: List[CriterionScore]) -> List[Dict]:
+    """Działania rozwojowe do IPRZ — w pierwszej kolejności dla kryteriów z najniższymi ocenami."""
+    ranked = sorted(criteria, key=lambda c: c.score if c.score is not None else 5)
+    chosen = [c for c in ranked if c.score is None or c.score <= 5][:MAX_DEVELOPMENT_CRITERIA] or ranked[:2]
+    return [{"criterion": c.name, "actions": DEVELOPMENT_ACTIONS.get(c.name, [])} for c in chosen
+            if DEVELOPMENT_ACTIONS.get(c.name)]

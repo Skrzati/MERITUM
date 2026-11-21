@@ -43,6 +43,10 @@ services:
       DB_USER: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       GOTENBERG_URL: http://gotenberg:3000/forms/chromium/convert/html
+      AI_GATEWAY_URL: http://ai-gateway:8000
+      JWT_SECRET: ${JWT_SECRET:-}
+      STATS_K_ANONYMITY: ${STATS_K_ANONYMITY:-5}
+      DEMO_HEADER_ENABLED: ${DEMO_HEADER_ENABLED:-true}
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     depends_on:
@@ -67,6 +71,7 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434/v1}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-SpeakLeash/bielik-11b-v2.3-instruct}
+      LLM_LIVE: ${LLM_LIVE:-false}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:

@@ -10,7 +10,7 @@ public enum CycleStatus {
     private static final Map<CycleStatus, Set<CycleStatus>> TRANSITIONS = Map.of(
             DRAFT_CRITERIA, EnumSet.of(CRITERIA_CONFIRMED, OBSERVATION),
             CRITERIA_CONFIRMED, EnumSet.of(OBSERVATION),
-            OBSERVATION, EnumSet.of(EVALUATION_DRAFT, AWAITING_ACK),
+            OBSERVATION, EnumSet.of(EVALUATION_DRAFT, AWAITING_ACK, DRAFT_CRITERIA), // DRAFT_CRITERIA: § 9 ust. 1
             EVALUATION_DRAFT, EnumSet.of(EVALUATION_DRAFT, AWAITING_ACK),
             AWAITING_ACK, EnumSet.of(COMPLETED),
             COMPLETED, EnumSet.of(APPEALED),

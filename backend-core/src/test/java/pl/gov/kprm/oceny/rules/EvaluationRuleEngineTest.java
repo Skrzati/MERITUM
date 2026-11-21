@@ -77,9 +77,26 @@ class EvaluationRuleEngineTest {
     @Test
     void gradeRequestOnlyForCivilServantAndWithMotivation() {
         var in = new EvaluationInput(CRITERIA, scores(9, 9, 9, 9, 9), null, "IPRZ",
-                new GradeRequest(true, ""), false);
+                new GradeRequest(true, ""), false, null);
 
         assertThat(engine.assess(in).violations()).hasSize(2);
+    }
+
+    @Test
+    void gradeRequestBlockedForNegativeEvaluation() {
+        var in = new EvaluationInput(CRITERIA, scores(1, 5, 5, 5, 5), "Uzasadnienie", "IPRZ",
+                new GradeRequest(true, "Umotywowanie"), true, 3);
+
+        assertThat(engine.assess(in).violations())
+                .containsExactly("Wniosek o kolejny stopień służbowy można dołączyć wyłącznie do oceny pozytywnej (§ 11 ust. 5)");
+    }
+
+    @Test
+    void gradeRequestBlockedAtHighestGrade() {
+        var in = new EvaluationInput(CRITERIA, scores(9, 9, 9, 9, 9), null, "IPRZ",
+                new GradeRequest(true, "Umotywowanie"), true, 9);
+
+        assertThat(engine.assess(in).violations()).singleElement().asString().contains("najwyższy możliwy stopień");
     }
 
     @Test
@@ -99,7 +116,7 @@ class EvaluationRuleEngineTest {
     }
 
     private static EvaluationInput input(Map<String, Integer> scores, String justification, String iprz) {
-        return new EvaluationInput(CRITERIA, scores, justification, iprz, null, true);
+        return new EvaluationInput(CRITERIA, scores, justification, iprz, null, true, 3);
     }
 
     private static Map<String, Integer> scores(int... values) {

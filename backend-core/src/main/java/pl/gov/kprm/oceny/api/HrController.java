@@ -25,6 +25,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class HrController {
     private final HrService hr;
+    private final CycleMapper mapper;
 
     @GetMapping("/employees")
     public List<UserDto> employees(@CurrentUser User user,
@@ -38,7 +39,7 @@ public class HrController {
     @PostMapping("/absences")
     public List<CycleDto> registerAbsence(@CurrentUser User user, @Valid @RequestBody AbsenceRequest req) {
         return hr.registerAbsence(user, req.userId(), req.startDate(), req.endDate(), req.reason())
-                .stream().map(CycleDto::of).toList();
+                .stream().map(mapper::toDto).toList();
     }
 
     @PostMapping("/handover")
