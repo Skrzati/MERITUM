@@ -8,7 +8,7 @@ import pl.gov.kprm.oceny.domain.Role;
 import pl.gov.kprm.oceny.domain.SchemaVersion;
 import pl.gov.kprm.oceny.domain.User;
 import pl.gov.kprm.oceny.repository.SchemaVersionRepository;
-import pl.gov.kprm.oceny.rules.RuleViolationException;
+import pl.gov.kprm.oceny.rules.CriteriaCatalog;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -37,10 +37,7 @@ public class SchemaAdminService {
         if (schemas.existsByVersionCode(versionCode)) {
             throw conflict("Wersja schematu " + versionCode + " już istnieje");
         }
-        JsonNode criteria = config.path("criteria");
-        if (!criteria.isArray() || criteria.isEmpty()) {
-            throw new RuleViolationException(List.of("config.criteria musi być niepustą tablicą kryteriów"));
-        }
+        CriteriaCatalog.from(config);
         SchemaVersion schema = new SchemaVersion();
         schema.setVersionCode(versionCode);
         schema.setEffectiveFrom(effectiveFrom);

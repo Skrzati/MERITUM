@@ -11,11 +11,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class EvaluationRuleEngineTest {
     private static final List<Criterion> CRITERIA = List.of(
-            new Criterion("K01", "Rzetelność i terminowość", true),
-            new Criterion("K02", "Postawa etyczna", true),
-            new Criterion("K04", "Współpraca i praca w zespole", false),
-            new Criterion("K07", "Planowanie i organizacja pracy własnej", false),
-            new Criterion("K12", "Wiedza specjalistyczna", false));
+            new Criterion("K08", "Rzetelność", true),
+            new Criterion("K10", "Wykorzystywanie wiedzy i doskonalenie zawodowe", true),
+            new Criterion("K04", "Organizacja pracy i orientacja na osiąganie celów", true),
+            new Criterion("K11", "Współpraca", true),
+            new Criterion("K01", "Komunikacja", true));
 
     private final EvaluationRuleEngine engine = new EvaluationRuleEngine();
 
@@ -27,7 +27,7 @@ class EvaluationRuleEngineTest {
         assertThat(result.level()).isEqualTo(PerformanceLevel.MEETS);
         assertThat(result.outcome()).isEqualTo(EvaluationOutcome.NEGATIVE);
         assertThat(result.explanation())
-                .isEqualTo("Średnia 4.2 (na poziomie oczekiwań), ale kryterium Rzetelność i terminowość (K01) = 1 pkt -> ocena negatywna");
+                .isEqualTo("Średnia 4.2 (na poziomie oczekiwań), ale kryterium Rzetelność (K08) = 1 pkt -> ocena negatywna");
         assertThat(result.isValid()).isTrue();
     }
 
@@ -86,32 +86,16 @@ class EvaluationRuleEngineTest {
     void rejectsScoresOutsideScale() {
         assertThatThrownBy(() -> engine.assess(input(scores(4, 5, 5, 5, 5), "x", "y")))
                 .isInstanceOf(RuleViolationException.class)
-                .hasMessageContaining("K01");
+                .hasMessageContaining("K08");
     }
 
     @Test
     void rejectsMissingScore() {
         Map<String, Integer> partial = new LinkedHashMap<>(scores(5, 5, 5, 5, 5));
-        partial.remove("K12");
+        partial.remove("K01");
         assertThatThrownBy(() -> engine.assess(input(partial, null, "IPRZ")))
                 .isInstanceOf(RuleViolationException.class)
-                .hasMessageContaining("Brak oceny dla kryterium K12");
-    }
-
-    @Test
-    void additionalCriteria_maxThreeNoDuplicatesNoMandatory() {
-        List<Criterion> mandatory = CRITERIA.subList(0, 2);
-
-        assertThatThrownBy(() -> engine.validateAdditionalCriteria(mandatory, List.of(
-                new Criterion("K04", "a", false), new Criterion("K05", "b", false),
-                new Criterion("K06", "c", false), new Criterion("K07", "d", false))))
-                .hasMessageContaining("maksymalnie 3");
-        assertThatThrownBy(() -> engine.validateAdditionalCriteria(mandatory,
-                List.of(new Criterion("K01", "Rzetelność i terminowość", true))))
-                .hasMessageContaining("już obowiązkowe");
-        assertThatThrownBy(() -> engine.validateAdditionalCriteria(mandatory,
-                List.of(new Criterion("D1", "Kreatywność", false), new Criterion("D2", "kreatywność ", false))))
-                .hasMessageContaining("powtarza się");
+                .hasMessageContaining("Brak oceny dla kryterium K01");
     }
 
     private static EvaluationInput input(Map<String, Integer> scores, String justification, String iprz) {

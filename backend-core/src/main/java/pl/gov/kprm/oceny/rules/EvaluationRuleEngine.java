@@ -11,32 +11,10 @@ import java.util.stream.Collectors;
 @Component
 public class EvaluationRuleEngine {
     public static final Set<Integer> ALLOWED_SCORES = Set.of(1, 3, 5, 7, 9);
-    public static final int MAX_ADDITIONAL_CRITERIA = 3;
     private static final int DISQUALIFYING_SCORE = 1;
 
     public void validateScale(Map<String, Integer> scores) {
         List<String> violations = scaleViolations(scores);
-        if (!violations.isEmpty()) {
-            throw new RuleViolationException(violations);
-        }
-    }
-
-    public void validateAdditionalCriteria(List<Criterion> mandatory, List<Criterion> additional) {
-        List<String> violations = new ArrayList<>();
-        if (additional.size() > MAX_ADDITIONAL_CRITERIA) {
-            violations.add("Można wybrać maksymalnie " + MAX_ADDITIONAL_CRITERIA + " kryteria dodatkowe");
-        }
-        Set<String> mandatoryKeys = new HashSet<>();
-        mandatory.forEach(c -> mandatoryKeys.addAll(keys(c)));
-        Set<String> seen = new HashSet<>();
-        for (Criterion c : additional) {
-            if (!Collections.disjoint(keys(c), mandatoryKeys)) {
-                violations.add("Kryterium „" + c.name() + "” jest już obowiązkowe w tej wersji schematu");
-            } else if (!Collections.disjoint(keys(c), seen)) {
-                violations.add("Kryterium „" + c.name() + "” powtarza się");
-            }
-            seen.addAll(keys(c));
-        }
         if (!violations.isEmpty()) {
             throw new RuleViolationException(violations);
         }
@@ -112,13 +90,6 @@ public class EvaluationRuleEngine {
                 .filter(e -> e.getValue() == null || !ALLOWED_SCORES.contains(e.getValue()))
                 .map(e -> "Kryterium " + e.getKey() + ": dozwolone oceny to 1, 3, 5, 7, 9 (podano " + e.getValue() + ")")
                 .toList();
-    }
-
-    private static Set<String> keys(Criterion c) {
-        Set<String> keys = new HashSet<>();
-        if (!isBlank(c.code())) keys.add("code:" + c.code().trim().toUpperCase(Locale.ROOT));
-        if (!isBlank(c.name())) keys.add("name:" + c.name().trim().toLowerCase(Locale.ROOT));
-        return keys;
     }
 
     private static boolean isBlank(String s) {

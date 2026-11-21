@@ -18,7 +18,7 @@
 │       ├── java/pl/gov/kprm/oceny/
 │       │   ├── config/       # AppConfig (Clock Europe/Warsaw)
 │       │   ├── domain/       # encje JPA + enumy (Role, SheetType, CycleStatus z mapą przejść, DgDecision)
-│       │   ├── rules/        # czysta logika prawa, bez I/O: DeadlineService, EvaluationRuleEngine, rekordy reguł
+│       │   ├── rules/        # czysta logika prawa, bez I/O: DeadlineService, EvaluationRuleEngine, CriteriaCatalog, rekordy reguł
 │       │   ├── service/      # przypadki użycia: CycleWorkflowService, HrService, SchemaAdminService,
 │       │   │                 #   StatsService, AuditService, Access (autoryzacja)
 │       │   ├── repository/   # Spring Data JPA
@@ -26,8 +26,8 @@
 │       │   └── api/          # kontrolery REST, Dtos, Requests, ApiExceptionHandler (RFC 7807)
 │       └── resources/
 │           ├── application.yml          # konfiguracja wyłącznie przez env (DB_URL, DB_USER, DB_PASSWORD, GOTENBERG_URL)
-│           └── db/migration/            # Flyway: V1 schemat, V2 seed demo, V3 workflow + absences
-│   └── src/test/java/.../rules/         # JUnit 5: DeadlineServiceTest, EvaluationRuleEngineTest
+│           └── db/migration/            # Flyway: V1 schemat, V2 seed demo, V3 workflow + absences, V4 korekta kryteriów v1 (§ 4)
+│   └── src/test/java/.../rules/         # JUnit 5: DeadlineServiceTest, EvaluationRuleEngineTest, CriteriaCatalogTest (czyta JSON z V4)
 ├── ai-gateway/               # (etap 2+) serwis AI — na razie pusty
 └── frontend/                 # (etap 2+) aplikacja webowa — na razie pusta
 ```
@@ -50,7 +50,7 @@ Błędy: 403 brak uprawnień, 404 brak zasobu, 409 niedozwolone przejście stanu
 | GET | `/api/health` | wszyscy | status |
 | GET | `/api/auth/demo-users`, `/api/auth/me` | wszyscy | logowanie demo |
 | GET | `/api/cycles`, `/api/cycles/{id}` | wg roli | KPRM_ADMIN wszystko; HR/DG urząd; strony cyklu |
-| POST | `/api/cycles/{id}/criteria` | oceniający | obowiązkowe ze schematu + max 3 dodatkowe (status DRAFT_CRITERIA) |
+| POST | `/api/cycles/{id}/criteria` | oceniający | body `{"additional":[{"code":"K07"}]}` — obowiązkowe wg arkusza + 0–3 z katalogu (status DRAFT_CRITERIA) |
 | POST | `/api/cycles/{id}/confirm-criteria` | oceniany | → OBSERVATION (kryteria zablokowane) |
 | GET/POST | `/api/cycles/{id}/notes` | oceniający (POST); oceniany widzi swoje + `isSharedAfterEval` po ocenie | |
 | PUT | `/api/cycles/{id}/evaluate` | oceniający | `submit=false` → EVALUATION_DRAFT; `submit=true` → walidacja § 11 → AWAITING_ACK |
@@ -79,7 +79,11 @@ Przejścia zdefiniowane w `CycleStatus.TRANSITIONS`; każda zmiana stanu → wpi
 - **Poziomy** (górne granice włączne, liczone dokładnie `sum <= granica*n`): ≤2 znacznie poniżej; ≤4 poniżej; ≤6 na poziomie; ≤8 powyżej; ≤9 znacznie powyżej. UI dostaje średnią z 1 miejscem po przecinku.
 - **NEGATIVE**, gdy poziom poniżej oczekiwań LUB którakolwiek ocena = 1 (wyjaśnienie tekstowe w `explanation`).
 - **Blokady**: NEGATIVE → uzasadnienie; IPRZ zawsze; część III tylko dla urzędnika SC i z umotywowaniem.
-- **Kryteria**: obowiązkowe ze schematu (wg typu arkusza) + max 3 dodatkowe, bez powtórzeń i dublowania.
+- **Arkusze** (§ 3): A — kierownik urzędu; B — bezpośrednie kierowanie pracownikami; C — pozostałe stanowiska.
+- **Kryteria** (§ 4–5, `CriteriaCatalog`): obowiązkowe z `config.mandatoryBySheet` (v1: A 6, B 5, C 5) + 0–3 dodatkowe
+  (`criteriaRules.maxAdditional`) wyłącznie z katalogu `config.criteria` (v1: 14 kryteriów z zał. nr 1), bez powtórzeń
+  i bez dublowania obowiązkowych. Kryteria własne tylko gdy `criteriaRules.allowCustom=true` (v1: false).
+  Nowy schemat (`POST /api/admin/schemas`) musi przejść walidację `CriteriaCatalog.from`.
 - **Terminy**: sob./niedz./święto → następny dzień roboczy (święta stałe, Wigilia od 2025, Wielkanoc, Pn. Wielkanocny, Zielone Świątki, Boże Ciało). Nieobecność ciągła > 1 mies. przedłuża ocenę okresową o czas nieobecności (art. 81 ust. 7), nie przedłuża 6-mies. ponownej oceny. Rozmowa rozpoczynająca: 30 dni (7 po negatywnej). Sprzeciw: 7 dni od zapoznania.
 - Istniejące cykle zachowują `schema_version_id` (§ 13).
 

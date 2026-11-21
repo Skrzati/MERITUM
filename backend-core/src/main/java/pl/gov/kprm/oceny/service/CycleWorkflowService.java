@@ -1,7 +1,6 @@
 package pl.gov.kprm.oceny.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -64,12 +63,7 @@ public class CycleWorkflowService {
         requireStatus(cycle, CycleStatus.DRAFT_CRITERIA);
         SchemaVersion schema = schemas.findById(cycle.getSchemaVersionId())
                 .orElseThrow(() -> notFound("Schemat", cycle.getSchemaVersionId()));
-        List<Criterion> mandatory = mandatoryCriteria(schema, cycle.getSheetType());
-        List<Criterion> additional = resolveAdditional(schema, requested);
-        engine.validateAdditionalCriteria(mandatory, additional);
-
-        List<Criterion> all = new ArrayList<>(mandatory);
-        all.addAll(additional);
+        List<Criterion> all = CriteriaCatalog.from(schema.getConfigJson()).select(cycle.getSheetType(), requested);
         cycle.setCriteriaJson(json.valueToTree(all));
         audit.log(user, cycle.getOfficeId(), "CRITERIA_SET", AuditService.CYCLE, cycle.getId(),
                 Map.of("criteria", all.stream().map(Criterion::code).toList()));
@@ -251,62 +245,6 @@ public class CycleWorkflowService {
         }
         return json.convertValue(cycle.getCriteriaJson(), new TypeReference<>() {
         });
-    }
-
-    private static List<Criterion> mandatoryCriteria(SchemaVersion schema, SheetType sheet) {
-        List<Criterion> out = new ArrayList<>();
-        for (JsonNode n : schema.getConfigJson().path("criteria")) {
-            if (n.path("mandatory").asBoolean() && appliesTo(n, sheet)) {
-                out.add(new Criterion(n.path("code").asText(), n.path("name").asText(), true));
-            }
-        }
-        return out;
-    }
-
-    /** Kryterium z katalogu schematu (po kodzie) albo własne (tylko nazwa) — kod nadawany jako D1..Dn. */
-    private static List<Criterion> resolveAdditional(SchemaVersion schema, List<Criterion> requested) {
-        List<Criterion> out = new ArrayList<>();
-        List<String> violations = new ArrayList<>();
-        int custom = 0;
-        for (Criterion c : requested) {
-            if (c.code() != null && !c.code().isBlank()) {
-                Optional<JsonNode> entry = catalogEntry(schema, c.code());
-                if (entry.isEmpty()) {
-                    violations.add("Kryterium " + c.code() + " nie istnieje w schemacie " + schema.getVersionCode());
-                } else {
-                    out.add(new Criterion(entry.get().path("code").asText(), entry.get().path("name").asText(),
-                            entry.get().path("mandatory").asBoolean()));
-                }
-            } else if (c.name() != null && !c.name().isBlank()) {
-                out.add(new Criterion("D" + (++custom), c.name().trim(), false));
-            } else {
-                violations.add("Kryterium dodatkowe wymaga kodu lub nazwy");
-            }
-        }
-        if (!violations.isEmpty()) {
-            throw new RuleViolationException(violations);
-        }
-        return out;
-    }
-
-    private static Optional<JsonNode> catalogEntry(SchemaVersion schema, String code) {
-        for (JsonNode n : schema.getConfigJson().path("criteria")) {
-            if (n.path("code").asText().equalsIgnoreCase(code.trim())) {
-                return Optional.of(n);
-            }
-        }
-        return Optional.empty();
-    }
-
-    private static boolean appliesTo(JsonNode criterion, SheetType sheet) {
-        JsonNode sheets = criterion.path("sheets");
-        if (!sheets.isArray() || sheets.isEmpty()) {
-            return true;
-        }
-        for (JsonNode s : sheets) {
-            if (s.asText().equals(sheet.name())) return true;
-        }
-        return false;
     }
 
     private EvaluationCycle load(Long id) {
