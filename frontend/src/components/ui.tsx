@@ -7,7 +7,7 @@ import type { Tone } from "@/lib/labels";
 
 const TONES: Record<Tone, string> = {
   slate: "bg-slate-100 text-slate-800 ring-slate-300",
-  blue: "bg-blue-50 text-blue-900 ring-blue-300",
+  blue: "bg-gov-light text-gov-hover ring-navy-200",
   amber: "bg-amber-50 text-amber-900 ring-amber-300",
   green: "bg-green-50 text-green-900 ring-green-300",
   red: "bg-red-50 text-red-900 ring-red-300",
@@ -23,10 +23,10 @@ export function Badge({ tone = "slate", children }: { tone?: Tone; children: Rea
 
 export function Card({ title, actions, children }: { title?: string; actions?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="rounded border border-slate-200 bg-white p-5">
       {(title || actions) && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          {title && <h2 className="text-lg font-semibold text-navy-900">{title}</h2>}
+          {title && <h2 className="border-l-4 border-gov-blue pl-3 text-lg font-bold text-gov-text">{title}</h2>}
           {actions}
         </div>
       )}
@@ -37,10 +37,11 @@ export function Card({ title, actions, children }: { title?: string; actions?: R
 
 type ButtonVariant = "primary" | "secondary" | "danger" | "ai";
 const BUTTONS: Record<ButtonVariant, string> = {
-  primary: "bg-navy-700 text-white hover:bg-navy-800",
-  secondary: "bg-white text-navy-800 ring-1 ring-inset ring-slate-300 hover:bg-slate-50",
+  primary: "bg-gov-blue text-white hover:bg-gov-hover",
+  secondary: "bg-white text-gov-blue ring-1 ring-inset ring-slate-400 hover:bg-gov-light",
   danger: "bg-red-700 text-white hover:bg-red-800",
-  ai: "bg-indigo-700 text-white hover:bg-indigo-800",
+  // Asystent AI: niebieski kontur gov.pl zamiast osobnego koloru — AI jest narzędziem pomocniczym, nie decyzją.
+  ai: "bg-white text-gov-blue ring-2 ring-inset ring-gov-blue hover:bg-gov-light",
 };
 
 export function Button({
@@ -54,11 +55,12 @@ export function Button({
     <button
       {...props}
       disabled={props.disabled || busy}
-      className={`inline-flex items-center justify-center gap-2 rounded-md px-3.5 py-2 text-sm font-semibold
-        focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-navy-600
+      className={`inline-flex items-center justify-center gap-2 rounded px-3.5 py-2 text-sm font-bold
+        focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-gov-blue
         disabled:cursor-not-allowed disabled:opacity-50 ${BUTTONS[variant]} ${className}`}
     >
       {busy && <span aria-hidden className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />}
+      {variant === "ai" && !busy && <span aria-hidden className="text-xs">✦</span>}
       {children}
     </button>
   );
@@ -67,7 +69,7 @@ export function Button({
 export function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <label className="block text-sm">
-      <span className="mb-1 block font-medium text-slate-800">{label}</span>
+      <span className="mb-1 block font-semibold text-gov-text">{label}</span>
       {children}
       {hint && <span className="mt-1 block text-xs text-slate-600">{hint}</span>}
     </label>
@@ -75,12 +77,12 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
 }
 
 export const inputClass =
-  "block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm " +
-  "focus:border-navy-600 focus:outline-none focus:ring-2 focus:ring-navy-600/30 disabled:bg-slate-100";
+  "block w-full rounded border border-slate-400 bg-white px-3 py-2 text-sm text-gov-text " +
+  "focus:border-gov-blue focus:outline-none focus:ring-2 focus:ring-gov-blue/30 disabled:bg-slate-100";
 
 export function Alert({ tone = "blue", title, children }: { tone?: Tone; title?: string; children?: React.ReactNode }) {
   return (
-    <div role={tone === "red" ? "alert" : "status"} className={`rounded-md p-3 text-sm ring-1 ring-inset ${TONES[tone]}`}>
+    <div role={tone === "red" ? "alert" : "status"} className={`rounded p-3 text-sm ring-1 ring-inset ${TONES[tone]}`}>
       {title && <p className="font-semibold">{title}</p>}
       {children && <div className={title ? "mt-1" : ""}>{children}</div>}
     </div>
@@ -118,8 +120,8 @@ export function ModeBadge({ mode }: { mode: AiMode }) {
 
 export function AiDisclaimer({ text }: { text: string }) {
   return (
-    <p className="flex items-start gap-2 rounded bg-indigo-50 px-3 py-2 text-xs font-medium text-indigo-900 ring-1 ring-inset ring-indigo-200">
-      <span aria-hidden>🤖</span>
+    <p className="flex items-start gap-2 border-l-4 border-gov-blue bg-gov-light px-3 py-2 text-xs font-medium text-gov-hover">
+      <span aria-hidden className="font-bold">AI</span>
       {text}
     </p>
   );
@@ -129,12 +131,12 @@ export function AiDisclaimer({ text }: { text: string }) {
 export function MaskedPrompt({ prompt }: { prompt: string }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="rounded-md border border-dashed border-slate-300">
+    <div className="rounded border border-dashed border-slate-400">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium text-navy-800 hover:bg-slate-50"
+        className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-semibold text-gov-blue hover:bg-gov-light focus:outline-none focus-visible:ring-2 focus-visible:ring-gov-blue"
       >
         <span>🔒 Co widzi model AI? (prompt po maskowaniu PII)</span>
         <span aria-hidden>{open ? "▲" : "▼"}</span>
@@ -163,7 +165,7 @@ function highlightTokens(text: string): React.ReactNode[] {
 export function Spinner({ label = "Ładowanie…" }: { label?: string }) {
   return (
     <p className="flex items-center gap-2 text-sm text-slate-600" role="status">
-      <span aria-hidden className="h-4 w-4 animate-spin rounded-full border-2 border-navy-600 border-t-transparent" />
+      <span aria-hidden className="h-4 w-4 animate-spin rounded-full border-2 border-gov-blue border-t-transparent" />
       {label}
     </p>
   );
@@ -171,7 +173,7 @@ export function Spinner({ label = "Ładowanie…" }: { label?: string }) {
 
 export function Stat({ label, value, hint, tone = "slate" }: { label: string; value: React.ReactNode; hint?: string; tone?: Tone }) {
   return (
-    <div className={`rounded-lg p-4 ring-1 ring-inset ${TONES[tone]}`}>
+    <div className={`rounded p-4 ring-1 ring-inset ${TONES[tone]}`}>
       <p className="text-xs font-semibold uppercase tracking-wide opacity-80">{label}</p>
       <p className="mt-1 text-3xl font-bold">{value}</p>
       {hint && <p className="mt-1 text-xs opacity-80">{hint}</p>}

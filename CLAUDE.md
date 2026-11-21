@@ -58,10 +58,16 @@
 └── frontend/                 # Next.js 16 (App Router) + TypeScript + Tailwind 3, React 19
     ├── Dockerfile            # node:22-alpine, output standalone, user non-root
     ├── next.config.mjs       # rewrites: /api/ai/* -> ai-gateway, /api/* -> backend-core (wyliczane w czasie builda!)
+    ├── tailwind.config.ts    # paleta `gov` (gov.pl) + tokeny `navy` przemapowane na niebieski gov.pl
     └── src/
-        ├── app/              # strony: / (pulpit), /cycles/[id], /hr, /stats, /admin
-        ├── components/       # Header (role switcher), UserProvider, RoleGate, ui.tsx (kit), cycle/* (zakładki)
-        └── lib/              # api.ts (fetch + X-Demo-User-Id), types.ts (kontrakty DTO), labels.ts, useAsync.ts
+        ├── app/              # strony: / (pulpit + modal nowego cyklu), /cycles/[id] (6 zakładek), /hr, /stats,
+        │                     #   /audit (dziennik audytu), /wellbeing (ankieta dobrostanu), /admin
+        ├── components/       # Header (pasek RP, nawigacja, dzwonek powiadomień, rola demo), LoginModal (SSO AD / Węzeł
+        │                     #   Krajowy — symulacja), PrivacyNotice (RODO art. 13, AI Act art. 26/50), UserProvider,
+        │                     #   RoleGate, ui.tsx (kit gov.pl), cycle/* (CriteriaTab, InterviewTab, NotesTab,
+        │                     #   EvaluationTab, ChangesTab, AckTab + ScorePicker, ProgressSteps, context.ts)
+        └── lib/              # api.ts (Bearer JWT z gov-login, fallback X-Demo-User-Id, coreAi()), types.ts (wszystkie
+                              #   kontrakty DTO), labels.ts (etykiety, dueState, MAX_CIVIL_SERVICE_GRADE), useAsync.ts
 ```
 
 ## Kontenery (`make up`)
@@ -133,7 +139,7 @@ Błędy: 403 brak uprawnień, 404 brak zasobu, 409 niedozwolone przejście stanu
 | POST | `/api/ai/suggest-criteria` | `{position_title, department, sheet_type, mandatory_codes, responsibilities_summary}` → `masked_prompt`, `suggestions[{code, name, reason, expectations}]` (max 3, wyłącznie z katalogu, spoza obowiązkowych — filtr także na odpowiedzi LLM), `ai_disclaimer`, `mode` |
 
 Kody `consistency-check`: `CRITERIA_MISMATCH`, `FOREIGN_NAME`, `LEVEL_MISMATCH`, `AVERAGE_MISMATCH`, `DUPLICATE_TEXT`, `GENDER_MISMATCH`.
-Frontend (Etap 6) powinien wołać AI przez `/api/core-ai/*` (audyt), a nie bezpośrednio `/api/ai/*`.
+Frontend woła AI wyłącznie przez `/api/core-ai/*?cycleId=` (audyt), nie bezpośrednio `/api/ai/*`.
 | — | `/swagger-ui.html` | | dokumentacja |
 
 ## Maszyna stanów
@@ -219,12 +225,25 @@ Hibernate `ddl-auto: validate` — schemat zmienia WYŁĄCZNIE Flyway.
 
 ### Frontend
 - Przeglądarka rozmawia wyłącznie z Next.js (proxy przez rewrites) — brak CORS, adresy usług tylko w build args.
-- Wszystkie wywołania przez `lib/api.ts` (automatyczny `X-Demo-User-Id`, błędy RFC 7807 -> `ApiError`).
-- Typy w `lib/types.ts` muszą odpowiadać `Dtos.java` / modelom Pydantic — zmiana DTO = zmiana typów.
+- Wszystkie wywołania przez `lib/api.ts`: `Authorization: Bearer <JWT>` z `POST /api/auth/gov-login` (token w
+  `localStorage`), `X-Demo-User-Id` tylko gdy brak tokena; 401 → usunięcie tokena i jedno ponowienie; błędy RFC 7807 -> `ApiError`.
+- Pierwsze uruchomienie: automatyczny gov-login jako Kierownik (bez ściany logowania); zmiana roli = nowy gov-login.
+- Wywołania AI tylko przez `coreAi(operation, cycleId)` → `/api/core-ai/*` (audyt AI Act art. 26).
+- Typy w `lib/types.ts` muszą odpowiadać `Dtos.java` / modelom Pydantic — zmiana DTO = zmiana typów. Żadnych lokalnych
+  kopii kontraktów w komponentach.
+- Cykl (`/cycles/[id]`) ma 6 zakładek: 1. Kryteria (opisy zachowań z zał. nr 1, data rozmowy, AI `suggest-criteria`),
+  2. Rozmowy i IPRZ (`interview-prep` § 5 ust. 1 / § 10, `.ics`, katalog działań), 3. Notatki i HR Partner (kafelki
+  `hr-facts` → `hr-partner`), 4. Ocena i Sokratejskie AI (data rozmowy, `delayReason` po terminie — bez blokady, blokada
+  wniosku przy 9. stopniu, podpowiedzi IPRZ), 5. Termin (§ 8) i Zakres (§ 9) (`reschedule`, decyzja wniosku, pismo
+  `noticeText`, `scope-changes`), 6. Zapoznanie, Podpis i PDF (`MOBYWATEL_QES` / `PAPER_HYBRID`, PDF/A, EZD JSON,
+  termin decyzji DG).
+- Pulpit: „+ Nowy cykl oceny” (HR / bezpośredni przełożony), status terminu, badge art. 89 ust. 2, „Rozpocznij kolejny cykl”.
+- Styl gov.pl: kolory wyłącznie z palety `gov`/`navy` (bez osobnego koloru dla AI — przycisk AI to niebieski kontur).
 - Uprawnienia w UI wynikają z relacji do cyklu (evaluatorId/employeeId), tak jak w backendzie; UI tylko ukrywa akcje, decyduje backend.
 - Reguły prawa nie są duplikowane w UI: katalog kryteriów z `/api/schemas/{id}`, wynik oceny z silnika reguł (średnia w UI to tylko podgląd).
-- Dostępność: WCAG 2.1 AA — etykiety pól, focus-visible, role tablist/tab, `aria-*`, kontrast slate/navy na bieli.
-- Statystyki: backend zwraca `{value, suppressed}` (k=5) — UI tylko wyświetla, nie liczy progu (do przepięcia w Etapie 6).
+- Dostępność: WCAG 2.1 AA — etykiety pól, focus-visible, role tablist/tab, `aria-*`, kontrast gov-blue (#0052A5) na bieli.
+- Statystyki: backend zwraca `{value, suppressed}` i `kAnonymity` — UI pokazuje `<k` dla `suppressed`, nie liczy progu;
+  karta dobrostanu pokazuje średnie tylko, gdy backend je zwrócił (≥ k odpowiedzi).
 
 ### Baza / migracje
 - Migracje są niezmienne po wypchnięciu — zmiana = nowy plik `V{n}__opis.sql`.

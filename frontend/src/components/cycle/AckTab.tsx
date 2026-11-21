@@ -4,8 +4,7 @@ import { useState } from "react";
 import { Alert, Button, Card, Field, inputClass, ProblemAlert } from "@/components/ui";
 import { api, download, saveBlob } from "@/lib/api";
 import { formatDate, today } from "@/lib/labels";
-import type { Cycle, DgDecision } from "@/lib/types";
-import type { SignatureMethod } from "./contracts";
+import type { Cycle, DgDecision, SignatureMethod } from "@/lib/types";
 import type { CycleView } from "./context";
 import { ScorePicker } from "./ScorePicker";
 

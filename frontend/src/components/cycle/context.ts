@@ -1,14 +1,13 @@
-import type { Note, Schema, User } from "@/lib/types";
-import type { CycleDetails, SchemaConfigDetails, UserDetails } from "./contracts";
+import type { Cycle, Note, Schema, User } from "@/lib/types";
 
 /** Wspólne dane i uprawnienia przekazywane do zakładek cyklu. */
 export interface CycleView {
-  cycle: CycleDetails;
-  schema: (Schema & { config: SchemaConfigDetails }) | null;
+  cycle: Cycle;
+  schema: Schema | null;
   notes: Note[] | null;
   notesError: unknown;
   me: User;
-  employee: UserDetails | undefined;
+  employee: User | undefined;
   isEvaluator: boolean;
   isEmployee: boolean;
   isOfficeHr: boolean;

@@ -2,10 +2,9 @@
 
 import { useState } from "react";
 import { AiDisclaimer, Alert, Badge, Button, Card, Field, inputClass, MaskedPrompt, ModeBadge, ProblemAlert } from "@/components/ui";
-import { api } from "@/lib/api";
+import { api, coreAi } from "@/lib/api";
 import { formatDate } from "@/lib/labels";
-import type { Cycle } from "@/lib/types";
-import { coreAi, type CatalogCriterion, type SuggestCriteriaResponse } from "./contracts";
+import type { CatalogCriterion, Cycle, SuggestCriteriaResponse } from "@/lib/types";
 import type { CycleView } from "./context";
 
 const DEFAULT_MAX_ADDITIONAL = 3;
@@ -151,11 +150,11 @@ export function CriteriaTab({ view }: { view: CycleView }) {
                   {suggestion.suggestions.map((s) => {
                     const checked = selected.includes(s.code);
                     return (
-                      <li key={s.code} className="rounded-md border border-indigo-200 bg-indigo-50/40 p-3 text-sm">
+                      <li key={s.code} className="rounded border border-navy-200 bg-gov-light p-3 text-sm">
                         <label className="flex items-start gap-2 font-medium">
                           <input
                             type="checkbox"
-                            className="mt-0.5 h-4 w-4 accent-indigo-700"
+                            className="mt-0.5 h-4 w-4 accent-navy-700"
                             checked={checked}
                             disabled={!checked && selected.length >= maxAdditional}
                             onChange={() => toggle(s.code)}

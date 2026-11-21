@@ -6,7 +6,7 @@ import { useUser } from "@/components/UserProvider";
 import { api } from "@/lib/api";
 import { formatDate, today, type Tone } from "@/lib/labels";
 import { useAsync } from "@/lib/useAsync";
-import type { RescheduleMode, RescheduleRequest, RescheduleStatus, ScopeChange, ScopeChangeOutcome } from "./contracts";
+import type { RescheduleMode, RescheduleRequest, RescheduleStatus, ScopeChange, ScopeChangeOutcome } from "@/lib/types";
 import type { CycleView } from "./context";
 
 const MODES: { mode: RescheduleMode; label: string; byEmployee: boolean }[] = [

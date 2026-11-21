@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Header } from "@/components/Header";
+import { PrivacyNotice } from "@/components/PrivacyNotice";
 import { UserProvider } from "@/components/UserProvider";
 
 export const metadata: Metadata = {
@@ -17,12 +18,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </a>
         <UserProvider>
           <Header />
+          <PrivacyNotice />
           <main id="main" className="mx-auto max-w-7xl px-4 py-6">
             {children}
           </main>
         </UserProvider>
-        <footer className="mx-auto max-w-7xl px-4 pb-8 text-xs text-slate-600">
-          MERITUM · demo hackathonowe · treści AI wymagają weryfikacji człowieka (AI Act art. 50)
+        <footer className="border-t border-slate-200 bg-white">
+          <div className="mx-auto max-w-7xl px-4 py-4 text-xs text-slate-700">
+            MERITUM · Służba Cywilna · demo hackathonowe · treści AI wymagają weryfikacji człowieka (AI Act art. 50)
+          </div>
         </footer>
       </body>
     </html>

@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { AiDisclaimer, Alert, Button, Card, MaskedPrompt, ModeBadge, ProblemAlert } from "@/components/ui";
 import { useUser } from "@/components/UserProvider";
-import { api, download } from "@/lib/api";
+import { api, coreAi, download } from "@/lib/api";
 import { formatDate } from "@/lib/labels";
-import { coreAi, type InterviewPrepResponse, type InterviewStage } from "./contracts";
+import type { InterviewPrepResponse, InterviewStage } from "@/lib/types";
 import type { CycleView } from "./context";
 
 const STAGES: { id: InterviewStage; label: string }[] = [

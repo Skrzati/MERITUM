@@ -5,7 +5,6 @@ import { useParams } from "next/navigation";
 import { useState } from "react";
 import { AckTab } from "@/components/cycle/AckTab";
 import { ChangesTab } from "@/components/cycle/ChangesTab";
-import type { CycleDetails, UserDetails } from "@/components/cycle/contracts";
 import type { CycleView } from "@/components/cycle/context";
 import { CriteriaTab } from "@/components/cycle/CriteriaTab";
 import { EvaluationTab } from "@/components/cycle/EvaluationTab";
@@ -16,7 +15,7 @@ import { Badge, Card, ProblemAlert, Spinner } from "@/components/ui";
 import { useUser } from "@/components/UserProvider";
 import { api, ApiError } from "@/lib/api";
 import { formatDate, LEVEL_LABEL, OUTCOME_LABEL, STATUS_LABEL, STATUS_TONE } from "@/lib/labels";
-import type { Note, Schema } from "@/lib/types";
+import type { Cycle, Note, Schema } from "@/lib/types";
 import { useAsync } from "@/lib/useAsync";
 
 const TABS = [
@@ -30,8 +29,8 @@ const TABS = [
 type TabId = (typeof TABS)[number]["id"];
 
 interface Loaded {
-  cycle: CycleDetails;
-  schema: CycleView["schema"];
+  cycle: Cycle;
+  schema: Schema | null;
   notes: Note[] | null;
   notesError: unknown;
 }
@@ -43,9 +42,9 @@ export default function CyclePage() {
 
   const state = useAsync<Loaded | null>(async () => {
     if (!current) return null;
-    const cycle = await api<CycleDetails>(`/api/cycles/${id}`);
+    const cycle = await api<Cycle>(`/api/cycles/${id}`);
     const [schema, notesResult] = await Promise.all([
-      api<Schema>(`/api/schemas/${cycle.schemaVersionId}`).then((s) => s as CycleView["schema"], () => null),
+      api<Schema>(`/api/schemas/${cycle.schemaVersionId}`).catch(() => null),
       api<Note[]>(`/api/cycles/${id}/notes`).then(
         (notes) => ({ notes, error: null as unknown }),
         (error: unknown) => ({ notes: null, error }),
@@ -74,7 +73,7 @@ export default function CyclePage() {
   const view: CycleView = {
     ...state.data,
     me: current,
-    employee: userById(cycle.employeeId) as UserDetails | undefined,
+    employee: userById(cycle.employeeId),
     isEvaluator: current.id === cycle.evaluatorId,
     isEmployee: current.id === cycle.employeeId,
     isOfficeHr: current.role === "HR" && current.officeId === cycle.officeId,

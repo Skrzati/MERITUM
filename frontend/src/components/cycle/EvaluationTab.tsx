@@ -3,10 +3,9 @@
 import { useState } from "react";
 import { AiDisclaimer, Alert, Badge, Button, Card, Field, inputClass, MaskedPrompt, ModeBadge, ProblemAlert } from "@/components/ui";
 import { useUser } from "@/components/UserProvider";
-import { api } from "@/lib/api";
-import { LEVEL_LABEL, OUTCOME_LABEL, previewAverage } from "@/lib/labels";
-import type { ConsistencyResponse, EvaluationResponse, EvaluationResult, SocraticResponse } from "@/lib/types";
-import { coreAi, MAX_CIVIL_SERVICE_GRADE, type InterviewPrepResponse } from "./contracts";
+import { api, coreAi } from "@/lib/api";
+import { LEVEL_LABEL, MAX_CIVIL_SERVICE_GRADE, OUTCOME_LABEL, previewAverage } from "@/lib/labels";
+import type { ConsistencyResponse, EvaluationResponse, EvaluationResult, InterviewPrepResponse, SocraticResponse } from "@/lib/types";
 import type { CycleView } from "./context";
 import { DevelopmentCatalog, fetchInterviewPrep } from "./InterviewTab";
 import { ScorePicker } from "./ScorePicker";

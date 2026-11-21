@@ -3,12 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { dueState, type CycleDetails } from "@/components/cycle/contracts";
 import { Alert, Badge, Button, Card, Field, inputClass, ProblemAlert, Spinner } from "@/components/ui";
 import { useUser } from "@/components/UserProvider";
 import { api } from "@/lib/api";
-import { formatDate, ROLE_LABEL, STATUS_LABEL, STATUS_TONE, today } from "@/lib/labels";
-import type { Schema, SheetType, User } from "@/lib/types";
+import { dueState, formatDate, ROLE_LABEL, STATUS_LABEL, STATUS_TONE, today } from "@/lib/labels";
+import type { Cycle, Schema, SheetType, User } from "@/lib/types";
 import { useAsync } from "@/lib/useAsync";
 
 const SHEETS: { value: SheetType; label: string }[] = [
@@ -20,7 +19,7 @@ const SHEETS: { value: SheetType; label: string }[] = [
 export default function DashboardPage() {
   const router = useRouter();
   const { current, users, userName, loading: userLoading, error: userError } = useUser();
-  const cycles = useAsync(async () => (current ? api<CycleDetails[]>("/api/cycles") : []), [current?.id]);
+  const cycles = useAsync(async () => (current ? api<Cycle[]>("/api/cycles") : []), [current?.id]);
   const schemaIds = useMemo(() => [...new Set((cycles.data ?? []).map((c) => c.schemaVersionId))], [cycles.data]);
   const schemas = useAsync(
     async () => Promise.all(schemaIds.map((id) => api<Schema>(`/api/schemas/${id}`))),
@@ -43,7 +42,7 @@ export default function DashboardPage() {
     setBusyId(cycleId);
     setActionError(null);
     try {
-      const next = await api<CycleDetails>(`/api/cycles/${cycleId}/next`, { method: "POST" });
+      const next = await api<Cycle>(`/api/cycles/${cycleId}/next`, { method: "POST" });
       router.push(`/cycles/${next.id}`);
     } catch (e) {
       setActionError(e);
@@ -55,7 +54,7 @@ export default function DashboardPage() {
   if (userError) return <ProblemAlert error={`Brak połączenia z backend-core: ${userError}`} />;
 
   const now = today();
-  const mayStartNext = (c: CycleDetails) => c.status === "COMPLETED" && (current?.role === "HR" || current?.id === c.evaluatorId);
+  const mayStartNext = (c: Cycle) => c.status === "COMPLETED" && (current?.role === "HR" || current?.id === c.evaluatorId);
 
   return (
     <div className="space-y-6">
@@ -160,7 +159,7 @@ function NewCycleDialog({
 }: {
   candidates: User[];
   onClose: () => void;
-  onCreated: (c: CycleDetails) => void;
+  onCreated: (c: Cycle) => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [employeeId, setEmployeeId] = useState<number>(candidates[0]?.id ?? 0);
@@ -180,7 +179,7 @@ function NewCycleDialog({
     setBusy(true);
     setError(null);
     try {
-      onCreated(await api<CycleDetails>("/api/cycles", { body: { employeeId, sheetType, startDate, reevaluation } }));
+      onCreated(await api<Cycle>("/api/cycles", { body: { employeeId, sheetType, startDate, reevaluation } }));
     } catch (e) {
       setError(e);
       setBusy(false);

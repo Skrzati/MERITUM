@@ -1,4 +1,4 @@
-import type { CycleStatus, Outcome, PerformanceLevel, Role } from "./types";
+import type { Cycle, CycleStatus, Outcome, PerformanceLevel, Role } from "./types";
 
 export const ROLE_LABEL: Record<Role, string> = {
   EVALUATOR: "Kierownik",
@@ -77,4 +77,16 @@ export function previewAverage(scores: (number | undefined)[]): string | null {
   const n = scores.length;
   const tenths = Math.floor((20 * sum + n) / (2 * n)); // zaokrąglenie HALF_UP na liczbach całkowitych
   return (tenths / 10).toFixed(1);
+}
+
+/** Najwyższy stopień służbowy w służbie cywilnej — wniosek o kolejny stopień jest bezprzedmiotowy. */
+export const MAX_CIVIL_SERVICE_GRADE = 9;
+
+/** Status terminu oceny: w terminie / zbliża się (≤ 30 dni) / po terminie. */
+export const DUE_SOON_DAYS = 30;
+export function dueState(c: Pick<Cycle, "dueDate" | "overdueDays" | "status" | "evaluatedOn">, todayIso: string): { tone: Tone; label: string } {
+  if (c.overdueDays > 0) return { tone: "red", label: `po terminie ${c.overdueDays} dni` };
+  if (c.status === "COMPLETED" || c.status === "APPEALED" || c.evaluatedOn) return { tone: "green", label: "ocena sporządzona" };
+  const days = Math.round((Date.parse(c.dueDate) - Date.parse(todayIso)) / 86_400_000);
+  return days <= DUE_SOON_DAYS ? { tone: "amber", label: `zbliża się (${days} dni)` } : { tone: "green", label: "w terminie" };
 }

@@ -3,5 +3,9 @@
 @tailwind utilities;
 
 body {
-  @apply bg-slate-50 text-slate-900 antialiased;
+  @apply bg-gov-section text-gov-text antialiased;
+}
+
+:focus-visible {
+  outline-color: #0052a5;
 }

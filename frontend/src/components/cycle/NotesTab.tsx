@@ -3,11 +3,10 @@
 import { useState } from "react";
 import { AiDisclaimer, Alert, Badge, Button, Card, Field, inputClass, MaskedPrompt, ModeBadge, ProblemAlert, Spinner, Stat } from "@/components/ui";
 import { useUser } from "@/components/UserProvider";
-import { api } from "@/lib/api";
+import { api, coreAi } from "@/lib/api";
 import { formatDate } from "@/lib/labels";
-import type { HrPartnerResponse, Note } from "@/lib/types";
+import type { HrFacts, HrPartnerResponse, Note } from "@/lib/types";
 import { useAsync } from "@/lib/useAsync";
-import { coreAi, type HrFacts } from "./contracts";
 import type { CycleView } from "./context";
 
 const ACTIVE = ["DRAFT_CRITERIA", "CRITERIA_CONFIRMED", "OBSERVATION", "EVALUATION_DRAFT", "AWAITING_ACK"];

@@ -13,6 +13,12 @@ export type CycleStatus =
 export type PerformanceLevel = "SIGNIFICANTLY_BELOW" | "BELOW" | "MEETS" | "ABOVE" | "SIGNIFICANTLY_ABOVE";
 export type Outcome = "POSITIVE" | "NEGATIVE";
 export type DgDecision = "CHANGE" | "REDO";
+export type SignatureMethod = "MOBYWATEL_QES" | "PAPER_HYBRID" | "SYSTEM_DEMO";
+export type RescheduleMode = "EVALUATOR_CHANGE" | "EMPLOYEE_ABSENCE" | "EVALUATOR_ABSENCE" | "EMPLOYEE_REQUEST";
+export type RescheduleStatus = "PENDING" | "APPLIED" | "REJECTED";
+export type ScopeChangeOutcome = "NONE" | "CRITERIA_RESET" | "EVALUATION_REQUIRED";
+export type InterviewStage = "INITIAL" | "EVALUATION";
+export type EscalationLevel = "OCENIAJACY" | "ZASTEPCA" | "KADRY" | "DYREKTOR_GENERALNY";
 
 export interface User {
   id: number;
@@ -22,6 +28,21 @@ export interface User {
   role: Role;
   civilServant: boolean;
   supervisorId: number | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  department?: string | null;
+  positionTitle?: string | null;
+  appointmentYear?: number | null;
+  civilServiceGrade?: number | null;
+  lastGradeDate?: string | null;
+}
+
+export interface LoginResponse {
+  accessToken: string;
+  tokenType: "Bearer";
+  expiresIn: number;
+  identityProvider: string;
+  user: User;
 }
 
 export interface Criterion {
@@ -64,6 +85,88 @@ export interface Cycle {
   dgDecision: DgDecision | null;
   dgComment: string | null;
   dgDecidedAt: string | null;
+  criteriaDeadline: string | null;
+  criteriaInterviewDate: string | null;
+  criteriaConfirmedOn: string | null;
+  evaluationInterviewDate: string | null;
+  evaluatedOn: string | null;
+  place: string | null;
+  appealDecisionDeadline: string | null;
+  mandatoryGradeEligible: boolean;
+  mandatoryGradeDeadline: string | null;
+  delayReason: string | null;
+  signatureMethod: SignatureMethod | null;
+  overdueDays: number;
+}
+
+export interface RescheduleRequest {
+  id: number;
+  cycleId: number;
+  mode: RescheduleMode;
+  statutePoint: number;
+  status: RescheduleStatus;
+  reason: string;
+  previousDueDate: string;
+  proposedDueDate: string | null;
+  newDueDate: string | null;
+  noticeText: string | null;
+  requestedBy: number;
+  decidedBy: number | null;
+  decisionComment: string | null;
+  createdAt: string;
+  decidedAt: string | null;
+}
+
+export interface ScopeChange {
+  id: number;
+  cycleId: number;
+  changeDate: string;
+  newPositionTitle: string | null;
+  description: string;
+  significant: boolean;
+  outcome: ScopeChangeOutcome;
+  actionDeadline: string | null;
+  recordedBy: number;
+}
+
+export interface HrFacts {
+  absenceDays: number;
+  scopeChangesCount: number;
+  overloadNotesCount: number;
+  totalNotesCount: number;
+  daysSinceLastNote: number | null;
+  overdueDays: number;
+}
+
+export interface NotificationItem {
+  type: "OVERDUE" | "DUE_SOON" | "CRITERIA_DUE" | "APPEAL_DECISION_DUE" | "MANDATORY_GRADE_DUE";
+  severity: "HIGH" | "MEDIUM" | "LOW";
+  cycleId: number;
+  dueDate: string | null;
+  message: string;
+}
+
+export interface OverdueItem {
+  cycleId: number;
+  employeeId: number;
+  employeeName: string | null;
+  evaluatorId: number;
+  evaluatorName: string | null;
+  dueDate: string;
+  overdueDays: number;
+  delayReason: string | null;
+  escalationLevel: EscalationLevel;
+}
+
+export interface AuditLogItem {
+  id: number;
+  officeId: number | null;
+  actorId: number | null;
+  action: string;
+  entityType: string;
+  entityId: number | null;
+  payload: Record<string, unknown> | null;
+  createdAt: string;
 }
 
 export interface Note {
@@ -89,11 +192,18 @@ export interface EvaluationResponse {
   result: EvaluationResult | null;
 }
 
+export interface CatalogCriterion {
+  code: string;
+  name: string;
+  /** Opisy zachowań z załącznika nr 1. */
+  description?: string[];
+}
+
 export interface SchemaConfig {
   legalBasis?: string;
   sheetTypes?: Partial<Record<SheetType, string>>;
   criteriaRules?: { maxAdditional?: number; allowCustom?: boolean };
-  criteria: { code: string; name: string }[];
+  criteria: CatalogCriterion[];
   mandatoryBySheet?: Partial<Record<SheetType, string[]>>;
   [key: string]: unknown;
 }
@@ -107,15 +217,32 @@ export interface Schema {
   createdBy: number | null;
 }
 
+/** Liczność po k-anonimizacji na serwerze: 1..k-1 → {value: null, suppressed: true}. */
+export interface AnonymizedCount {
+  value: number | null;
+  suppressed: boolean;
+}
+
+export interface WellbeingSummary {
+  responses: AnonymizedCount;
+  /** Średnie 1–5 — null, gdy odpowiedzi jest mniej niż k. */
+  avgWorkload: number | null;
+  avgEnergy: number | null;
+  avgSupport: number | null;
+  wantsConversation: AnonymizedCount;
+}
+
 export interface StatsSummary {
-  totalCycles: number;
-  byStatus: Record<string, number>;
-  byOutcome: Record<string, number>;
-  byLevel: Record<string, number>;
-  overdue: number;
-  dueIn7Days: number;
-  dueIn30Days: number;
-  appeals: number;
+  kAnonymity: number;
+  totalCycles: AnonymizedCount;
+  byStatus: Record<string, AnonymizedCount>;
+  byOutcome: Record<string, AnonymizedCount>;
+  byLevel: Record<string, AnonymizedCount>;
+  overdue: AnonymizedCount;
+  dueIn7Days: AnonymizedCount;
+  dueIn30Days: AnonymizedCount;
+  appeals: AnonymizedCount;
+  wellbeing: WellbeingSummary;
 }
 
 export interface HandoverResult {
@@ -169,4 +296,29 @@ export interface Problem {
   detail?: string;
   violations?: string[];
   result?: EvaluationResult;
+}
+
+export interface CriterionSuggestion {
+  code: string;
+  name: string;
+  reason: string;
+  expectations: string[];
+}
+
+export interface SuggestCriteriaResponse {
+  masked_prompt: string;
+  suggestions: CriterionSuggestion[];
+  ai_disclaimer: string;
+  mode: AiMode;
+}
+
+export interface InterviewPrepResponse {
+  masked_prompt: string;
+  stage: InterviewStage;
+  goal: string;
+  agenda: { topic: string; legal_basis: string; questions: string[] }[];
+  difficult_situations: { situation: string; tip: string }[];
+  development_catalog: { criterion: string; actions: string[] }[];
+  ai_disclaimer: string;
+  mode: AiMode;
 }
