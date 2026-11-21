@@ -51,20 +51,35 @@ public class SheetHtmlRenderer {
             @page { size: A4; margin: 14mm 13mm; }
             body { font-family: 'Noto Sans', 'DejaVu Sans', Arial, sans-serif; font-size: 9.5pt; color: #000; }
             .sheet { text-align: right; font-weight: bold; }
-            h1 { font-size: 12.5pt; text-align: center; margin: 4px 0 10px; }
-            h2 { font-size: 11pt; text-align: center; margin: 16px 0 6px; letter-spacing: 1px; }
+            h1 { font-size: 12.5pt; text-align: center; margin: 2px 0 8px; }
+            h2 { font-size: 11pt; text-align: center; margin: 14px 0 6px; letter-spacing: 1px; }
             h3 { font-size: 9.5pt; margin: 10px 0 3px; text-transform: uppercase; }
+            h1, h2, h3, .part-header, .section-title { page-break-after: avoid; break-after: avoid; }
+            .part-two { page-break-before: always; break-before: page; margin-top: 0; }
             table { width: 100%; border-collapse: collapse; margin: 3px 0; page-break-inside: avoid; }
+            tr, .sign, .award, .note { page-break-inside: avoid; break-inside: avoid; }
             th, td { border: 1px solid #000; padding: 3px 5px; vertical-align: top; }
             th { background: #eee; text-align: left; }
             td.l { width: 34%; font-weight: bold; background: #f7f7f7; }
             td.c, th.c { text-align: center; width: 9%; }
-            td.x { text-align: center; width: 7%; font-weight: bold; font-size: 11pt; }
+            td.x { text-align: center; width: 7%; vertical-align: middle; }
+            .cb { display: inline-block; width: 12px; height: 12px; border: 1px solid #000; text-align: center;
+                  line-height: 11px; font-weight: bold; font-size: 9pt; vertical-align: middle; }
+            .choices { display: flex; flex-wrap: wrap; gap: 16px; margin: 4px 0; }
+            .choice { display: inline-block; white-space: nowrap; }
+            .choice .cb { margin-left: 6px; }
             .box { height: 62px; white-space: pre-wrap; }
             .text { white-space: pre-wrap; }
-            .sign { display: flex; justify-content: space-between; gap: 10px; margin: 18px 0 4px; font-size: 8.5pt; }
-            .sign div { flex: 1; border-top: 1px dotted #000; text-align: center; padding-top: 2px; }
-            .sign div b { display: block; font-weight: normal; margin-top: -16px; margin-bottom: 4px; font-size: 9.5pt; }
+            .sign { display: flex; justify-content: space-between; gap: 12px; margin: 16px 0 4px; font-size: 8.5pt; }
+            .sign-field { flex: 1; text-align: center; }
+            .sign-line { min-height: 14px; border-bottom: 1px dotted #333; text-align: center; font-size: 9.5pt;
+                         padding-bottom: 1px; }
+            .sign-caption { margin-top: 2px; }
+            .part-one table { margin: 2px 0; }
+            .part-one th, .part-one td { padding: 2px 5px; }
+            .part-one h3 { margin: 7px 0 2px; }
+            .part-one p { margin: 6px 0; }
+            .part-one .sign { margin: 12px 0 2px; }
             .note { font-size: 8.5pt; border: 1px solid #000; padding: 5px; margin-top: 8px; }
             .muted { color: #555; }
             .refusal { font-style: italic; }
@@ -98,7 +113,8 @@ public class SheetHtmlRenderer {
 
     private static void partOne(StringBuilder h, SheetData d) {
         EvaluationCycle c = d.cycle();
-        h.append("<h2>CZĘŚĆ I</h2><table>").append(row("Nazwa urzędu", d.office().getName())).append("</table>")
+        h.append("<div class=\"part-one\"><h2 class=\"part-header\">CZĘŚĆ I</h2><table>")
+                .append(row("Nazwa urzędu", d.office().getName())).append("</table>")
                 .append("<h3>Dane ocenianego</h3>").append(personTable(d.employee(), "Stanowisko pracy"))
                 .append("<h3>Dane oceniającego</h3>").append(personTable(d.evaluator(), "Stanowisko"))
                 .append("<h3>Kryteria oceny i termin sporządzenia oceny</h3>")
@@ -117,12 +133,14 @@ public class SheetHtmlRenderer {
                 .append(", i omówienie w trakcie tej rozmowy wszystkich wymaganych zagadnień,<br>")
                 .append("− zapoznanie ocenianego z kryteriami oceny oraz terminem sporządzenia oceny.</p>")
                 .append(signature(c.getPlace(), c.getCriteriaInterviewDate(), "podpis oceniającego"))
-                .append(signature(c.getPlace(), c.getCriteriaConfirmedOn(), "podpis ocenianego"));
+                .append(signature(c.getPlace(), c.getCriteriaConfirmedOn(), "podpis ocenianego"))
+                .append("</div>");
     }
 
     private static void partTwo(StringBuilder h, SheetData d) {
         EvaluationCycle c = d.cycle();
-        h.append("<h2>CZĘŚĆ II</h2><table>")
+        // cz. II zawsze od nowej strony — nigdy osierocony nagłówek na dole strony 1
+        h.append("<h2 class=\"part-header part-two\">CZĘŚĆ II</h2><table>")
                 .append(row("Data przeprowadzenia rozmowy oceniającej (dd.mm.rrrr)", date(c.getEvaluationInterviewDate())))
                 .append(row("Okres, w którym oceniany podlegał ocenie",
                         "od: " + date(c.getCriteriaConfirmedOn()) + "   do: " + date(c.getEvaluatedOn())))
@@ -133,18 +151,18 @@ public class SheetHtmlRenderer {
 
         h.append("<table>").append(row("Średnia arytmetyczna z ocen cząstkowych przyznanych za poszczególne kryteria oceny",
                 averageDisplay(d))).append("</table>");
-        h.append("<h3>Przyznanie oceny</h3><table><tr><th class=\"c\">X</th><th>Liczba punktów stanowiąca średnią ")
+        h.append("<div class=\"award\"><h3 class=\"section-title\">Przyznanie oceny</h3><table><tr><th class=\"c\">X</th><th>Liczba punktów stanowiąca średnią ")
                 .append("arytmetyczną ze wszystkich ocen cząstkowych</th><th>Ogólny poziom spełnienia kryteriów oceny</th></tr>");
         PerformanceLevel level = c.getPerformanceLevel();
         for (String[] r : LEVEL_ROWS) {
-            h.append("<tr><td class=\"x\">").append(level != null && level.name().equals(r[0]) ? X : EMPTY)
+            h.append("<tr><td class=\"x\">").append(mark(level != null && level.name().equals(r[0])))
                     .append("</td><td>").append(r[1]).append("</td><td>").append(r[2]).append("</td></tr>");
         }
         EvaluationOutcome outcome = c.getFinalResult();
         h.append("</table><table><tr><td class=\"l\">OCENA OKRESOWA W SŁUŻBIE CYWILNEJ</td>")
-                .append("<td>POZYTYWNA</td><td class=\"x\">").append(outcome == EvaluationOutcome.POSITIVE ? X : EMPTY)
-                .append("</td><td>NEGATYWNA</td><td class=\"x\">").append(outcome == EvaluationOutcome.NEGATIVE ? X : EMPTY)
-                .append("</td></tr></table>")
+                .append("<td>POZYTYWNA</td><td class=\"x\">").append(mark(outcome == EvaluationOutcome.POSITIVE))
+                .append("</td><td>NEGATYWNA</td><td class=\"x\">").append(mark(outcome == EvaluationOutcome.NEGATIVE))
+                .append("</td></tr></table></div>")
                 .append(box("Uzasadnienie przyznanej oceny okresowej", c.getJustification()))
                 .append(box("Wnioski dotyczące indywidualnego programu rozwoju zawodowego", c.getIprzNotes()));
         if (!d.iprzItems().isEmpty()) {
@@ -173,10 +191,10 @@ public class SheetHtmlRenderer {
         }
         boolean attached = d.includesGradeRequest();
         h.append("</tr></table><h3>Czy do oceny okresowej dołączono wniosek o przyznanie kolejnego stopnia służbowego?</h3>")
-                .append("<table><tr><td>TAK</td><td class=\"x\">").append(civilServant && attached ? X : EMPTY)
-                .append("</td><td>NIE</td><td class=\"x\">").append(civilServant && !attached ? X : EMPTY)
-                .append("</td><td>NIE DOTYCZY (oceniany jest pracownikiem służby cywilnej)</td><td class=\"x\">")
-                .append(civilServant ? EMPTY : X).append("</td></tr></table>");
+                .append("<div class=\"choices\">").append(choice("TAK", civilServant && attached))
+                .append(choice("NIE", civilServant && !attached))
+                .append(choice("NIE DOTYCZY (oceniany jest pracownikiem służby cywilnej)", !civilServant))
+                .append("</div>");
 
         h.append("<h3>Dane oceniającego</h3>").append(personTable(d.evaluator(), "Stanowisko"))
                 .append(signature(c.getPlace(), c.getEvaluatedOn(), "podpis oceniającego"))
@@ -186,10 +204,11 @@ public class SheetHtmlRenderer {
             h.append("<p class=\"refusal\">[oceniany odmówił podpisania zapoznania się z oceną — ")
                     .append(date(c.getRefusalDate())).append("; ").append(esc(c.getRefusalReason())).append("]</p>");
         } else {
-            h.append("<div class=\"sign\"><div><b>").append(esc(c.getPlace())).append("</b>miejscowość</div><div><b>")
-                    .append(date(c.getAcknowledgedAt())).append("</b>data (dd.mm.rrrr)</div><div><b>")
-                    .append(c.getAcknowledgedAt() != null ? esc(d.employee().getFullName()) : EMPTY)
-                    .append("</b>imię i nazwisko lub pieczątka ocenianego</div><div><b>&nbsp;</b>podpis ocenianego</div></div>");
+            h.append("<div class=\"sign\">").append(field(esc(c.getPlace()), "miejscowość"))
+                    .append(field(date(c.getAcknowledgedAt()), "data (dd.mm.rrrr)"))
+                    .append(field(c.getAcknowledgedAt() != null ? esc(d.employee().getFullName()) : "",
+                            "imię i nazwisko lub pieczątka ocenianego"))
+                    .append(field("", "podpis ocenianego")).append("</div>");
         }
         if (c.getSignatureMethod() == SignatureMethod.MOBYWATEL_QES) {
             h.append("<p class=\"qes\">✔ ").append(QES_NOTE).append("</p>");
@@ -230,10 +249,10 @@ public class SheetHtmlRenderer {
                     .append("</b> stopnia służbowego.</p>");
         }
         h.append(box("Umotywowanie wniosku", d.gradeRequest().motivation()));
-        h.append("<div class=\"sign\"><div><b>").append(esc(d.cycle().getPlace())).append("</b>miejscowość</div><div><b>")
-                .append(date(d.cycle().getEvaluatedOn())).append("</b>data (dd.mm.rrrr)</div><div><b>")
-                .append(esc(d.evaluator().getFullName())).append("</b>imię i nazwisko lub pieczątka oceniającego</div>")
-                .append("<div><b>&nbsp;</b>podpis oceniającego</div></div>");
+        h.append("<div class=\"sign\">").append(field(esc(d.cycle().getPlace()), "miejscowość"))
+                .append(field(date(d.cycle().getEvaluatedOn()), "data (dd.mm.rrrr)"))
+                .append(field(esc(d.evaluator().getFullName()), "imię i nazwisko lub pieczątka oceniającego"))
+                .append(field("", "podpis oceniającego")).append("</div>");
     }
 
     private static void scoreMatrix(StringBuilder h, String title, List<Criterion> criteria, SheetData d) {
@@ -243,12 +262,13 @@ public class SheetHtmlRenderer {
         SCALE_HEADERS.forEach(s -> h.append("<th class=\"c\">").append(s[1]).append("</th>"));
         h.append("</tr>");
         if (criteria.isEmpty()) {
-            h.append("<tr><td>brak</td>").append("<td class=\"x\">&nbsp;</td>".repeat(SCALE.size())).append("</tr>");
+            h.append("<tr><td>brak</td>").append(("<td class=\"x\">" + mark(false) + "</td>").repeat(SCALE.size()))
+                    .append("</tr>");
         }
         for (Criterion cr : criteria) {
             Integer score = d.scores().get(cr.code());
             h.append("<tr><td>").append(esc(cr.name())).append("</td>");
-            SCALE.forEach(v -> h.append("<td class=\"x\">").append(v.equals(score) ? X : EMPTY).append("</td>"));
+            SCALE.forEach(v -> h.append("<td class=\"x\">").append(mark(v.equals(score))).append("</td>"));
             h.append("</tr>");
         }
         h.append("</table>");
@@ -285,8 +305,23 @@ public class SheetHtmlRenderer {
     }
 
     private static String signature(String place, LocalDate date, String who) {
-        return "<div class=\"sign\"><div><b>" + esc(place) + "</b>miejscowość</div><div><b>" + date(date)
-                + "</b>data (dd.mm.rrrr)</div><div><b>&nbsp;</b>" + who + "</div></div>";
+        return "<div class=\"sign\">" + field(esc(place), "miejscowość") + field(date(date), "data (dd.mm.rrrr)")
+                + field("", who) + "</div>";
+    }
+
+    /** Pole podpisu: wartość wyśrodkowana nad kropkowaną linią, podpis pola pod nią (zamiast kropek w tekście). */
+    private static String field(String escapedValue, String caption) {
+        return "<div class=\"sign-field\"><div class=\"sign-line\">" + escapedValue + "</div><div class=\"sign-caption\">"
+                + caption + "</div></div>";
+    }
+
+    /** Jedyny styl pola wyboru w arkuszu: kwadrat z „X” albo pusty (bez znaków Unicode i elementów formularza). */
+    static String mark(boolean checked) {
+        return checked ? "<span class=\"cb\">" + X + "</span>" : "<span class=\"cb\"></span>";
+    }
+
+    private static String choice(String label, boolean checked) {
+        return "<span class=\"choice\">" + label + mark(checked) + "</span>";
     }
 
     private static String row(String label, String value) {

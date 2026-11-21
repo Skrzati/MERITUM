@@ -69,15 +69,32 @@ class SheetHtmlRendererTest {
     void marksLevelRowAndNegativeOutcomeWithX() {
         String html = renderer.render(data(true, null));
 
-        assertThat(html).containsPattern("<td class=\"x\">X</td><td>powyżej 4 punktów do 6 punktów</td>")
-                .containsPattern("NEGATYWNA</td><td class=\"x\">X</td>");
+        assertThat(html).contains("<td class=\"x\"><span class=\"cb\">X</span></td><td>powyżej 4 punktów do 6 punktów</td>")
+                .contains("NEGATYWNA</td><td class=\"x\"><span class=\"cb\">X</span></td>")
+                .contains("POZYTYWNA</td><td class=\"x\"><span class=\"cb\"></span></td>")
+                .doesNotContain("☑", "type=\"checkbox\"");
+    }
+
+    @Test
+    void partTwoStartsOnNewPageAndSignaturesUseDottedLines() {
+        String html = renderer.render(data(true, null));
+        assertThat(html).contains("<h2 class=\"part-header part-two\">CZĘŚĆ II</h2>",
+                        ".part-two { page-break-before: always; break-before: page;",
+                        "page-break-after: avoid; break-after: avoid;", "page-break-inside: avoid; break-inside: avoid;",
+                        "<div class=\"award\">", "<div class=\"sign-line\">Warszawa</div>",
+                        "border-bottom: 1px dotted #333")
+                .doesNotContain("....");
+        assertThat(renderer.render(data(true, null), SheetParts.PART_ONE)).doesNotContain("part-two\">");
     }
 
     @Test
     void previousEvaluationAndGradeAttachmentSection() {
         assertThat(renderer.render(data(true, null))).contains("pozytywna", "powyżej oczekiwań", "15.12.2024");
         assertThat(renderer.render(data(false, null)))
-                .containsPattern("NIE DOTYCZY \\(oceniany jest pracownikiem służby cywilnej\\)</td><td class=\"x\">X");
+                .contains("<span class=\"choice\">NIE DOTYCZY (oceniany jest pracownikiem służby cywilnej)"
+                        + "<span class=\"cb\">X</span></span>")
+                .contains("<span class=\"choice\">TAK<span class=\"cb\"></span></span>")
+                .contains(".choices { display: flex; flex-wrap: wrap; gap: 16px;");
 
     }
 
