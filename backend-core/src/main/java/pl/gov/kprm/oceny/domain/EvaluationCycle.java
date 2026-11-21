@@ -7,9 +7,12 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
+import pl.gov.kprm.oceny.rules.EvaluationOutcome;
+import pl.gov.kprm.oceny.rules.PerformanceLevel;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 
 @Entity
 @Table(name = "evaluation_cycles")
@@ -28,14 +31,29 @@ public class EvaluationCycle {
     private CycleStatus status;
     private LocalDate startDate;
     private LocalDate dueDate;
+    private boolean isReevaluation;
     @JdbcTypeCode(SqlTypes.JSON)
     private JsonNode criteriaJson;
     @JdbcTypeCode(SqlTypes.JSON)
     private JsonNode scoresJson;
     private BigDecimal averageScore;
-    private String finalResult;
+    @Enumerated(EnumType.STRING)
+    private PerformanceLevel performanceLevel;
+    @Enumerated(EnumType.STRING)
+    private EvaluationOutcome finalResult;
+    private String resultExplanation;
     private String justification;
     private String iprzNotes;
     @JdbcTypeCode(SqlTypes.JSON)
     private JsonNode gradeRequestJson;
+    private LocalDate acknowledgedAt;
+    private String refusalReason;
+    private LocalDate refusalDate;
+    private LocalDate appealDeadline;
+    private String appealText;
+    private OffsetDateTime appealedAt;
+    @Enumerated(EnumType.STRING)
+    private DgDecision dgDecision;
+    private String dgComment;
+    private OffsetDateTime dgDecidedAt;
 }

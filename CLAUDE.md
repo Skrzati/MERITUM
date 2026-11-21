@@ -16,13 +16,18 @@
 │   ├── Dockerfile            # multi-stage: maven build -> temurin 21 JRE alpine, user non-root
 │   └── src/main/
 │       ├── java/pl/gov/kprm/oceny/
-│       │   ├── domain/       # encje JPA + enumy (Role, SheetType, CycleStatus)
+│       │   ├── config/       # AppConfig (Clock Europe/Warsaw)
+│       │   ├── domain/       # encje JPA + enumy (Role, SheetType, CycleStatus z mapą przejść, DgDecision)
+│       │   ├── rules/        # czysta logika prawa, bez I/O: DeadlineService, EvaluationRuleEngine, rekordy reguł
+│       │   ├── service/      # przypadki użycia: CycleWorkflowService, HrService, SchemaAdminService,
+│       │   │                 #   StatsService, AuditService, Access (autoryzacja)
 │       │   ├── repository/   # Spring Data JPA
 │       │   ├── auth/         # demo-login: DemoUserFilter (X-Demo-User-Id), @CurrentUser resolver
-│       │   └── api/          # kontrolery REST + DTO (rekordy)
+│       │   └── api/          # kontrolery REST, Dtos, Requests, ApiExceptionHandler (RFC 7807)
 │       └── resources/
 │           ├── application.yml          # konfiguracja wyłącznie przez env (DB_URL, DB_USER, DB_PASSWORD, GOTENBERG_URL)
-│           └── db/migration/            # Flyway: V1__init.sql (schemat), V2__seed_demo.sql (dane demo)
+│           └── db/migration/            # Flyway: V1 schemat, V2 seed demo, V3 workflow + absences
+│   └── src/test/java/.../rules/         # JUnit 5: DeadlineServiceTest, EvaluationRuleEngineTest
 ├── ai-gateway/               # (etap 2+) serwis AI — na razie pusty
 └── frontend/                 # (etap 2+) aplikacja webowa — na razie pusta
 ```
@@ -37,15 +42,50 @@
 W sieci Dockera serwisy adresują się po nazwach (`postgres:5432`, `gotenberg:3000`).
 
 ## API (backend-core)
-- `GET /api/health` — status
-- `GET /api/auth/demo-users` — lista użytkowników do logowania 1 kliknięciem
-- `GET /api/auth/me` — bieżący użytkownik (wymaga `X-Demo-User-Id`)
-- `GET /api/cycles` — cykle wg roli: KPRM_ADMIN wszystkie; HR/DG swój urząd; EVALUATOR/EVALUATED gdzie są stroną
-- Swagger: `/swagger-ui.html`
+Wszystko poza `/api/health` i `/api/auth/demo-users` wymaga nagłówka `X-Demo-User-Id`.
+Błędy: 403 brak uprawnień, 404 brak zasobu, 409 niedozwolone przejście stanu, 422 naruszenie reguł (`violations`, opcjonalnie `result`).
+
+| Metoda | Ścieżka | Kto | Efekt |
+|---|---|---|---|
+| GET | `/api/health` | wszyscy | status |
+| GET | `/api/auth/demo-users`, `/api/auth/me` | wszyscy | logowanie demo |
+| GET | `/api/cycles`, `/api/cycles/{id}` | wg roli | KPRM_ADMIN wszystko; HR/DG urząd; strony cyklu |
+| POST | `/api/cycles/{id}/criteria` | oceniający | obowiązkowe ze schematu + max 3 dodatkowe (status DRAFT_CRITERIA) |
+| POST | `/api/cycles/{id}/confirm-criteria` | oceniany | → OBSERVATION (kryteria zablokowane) |
+| GET/POST | `/api/cycles/{id}/notes` | oceniający (POST); oceniany widzi swoje + `isSharedAfterEval` po ocenie | |
+| PUT | `/api/cycles/{id}/evaluate` | oceniający | `submit=false` → EVALUATION_DRAFT; `submit=true` → walidacja § 11 → AWAITING_ACK |
+| POST | `/api/cycles/{id}/acknowledge` | oceniany | → COMPLETED, termin sprzeciwu +7 dni |
+| POST | `/api/cycles/{id}/refusal` | oceniający / HR | fikcja zapoznania (powód, data) → COMPLETED, +7 dni na sprzeciw |
+| POST | `/api/cycles/{id}/appeal` | oceniany | → APPEALED (w terminie) |
+| POST | `/api/cycles/{id}/appeal/decision` | DG | CHANGE (nowe oceny) → COMPLETED; REDO → EVALUATION_DRAFT |
+| GET | `/api/hr/employees?q=&sort=&dir=` | HR | lista pracowników urzędu |
+| POST | `/api/hr/absences` | HR | rejestracja nieobecności, przeliczenie `due_date` |
+| POST | `/api/hr/handover` | HR | zmiana przełożonego (§ 9 ust. 3) |
+| POST | `/api/hr/import-csv` (multipart `file`) | HR | `full_name,email,role,is_civil_servant[,supervisor_email]` |
+| GET | `/api/hr/employees/{id}/gdpr-export` | HR | art. 15 RODO |
+| GET/POST | `/api/admin/schemas` | KPRM_ADMIN | wersje schematu („prawo jako kod”) |
+| GET | `/api/stats/summary` | DG, HR | tylko agregaty |
+| — | `/swagger-ui.html` | | dokumentacja |
+
+## Maszyna stanów
+```
+DRAFT_CRITERIA → OBSERVATION → EVALUATION_DRAFT ⟲ → AWAITING_ACK → COMPLETED → APPEALED
+                 (OBSERVATION → AWAITING_ACK bezpośrednio)          APPEALED → COMPLETED (CHANGE) | EVALUATION_DRAFT (REDO)
+```
+Przejścia zdefiniowane w `CycleStatus.TRANSITIONS`; każda zmiana stanu → wpis w `audit_logs`.
+
+## Reguły prawne (`rules/`)
+- **Skala** cząstkowa: 1, 3, 5, 7, 9.
+- **Poziomy** (górne granice włączne, liczone dokładnie `sum <= granica*n`): ≤2 znacznie poniżej; ≤4 poniżej; ≤6 na poziomie; ≤8 powyżej; ≤9 znacznie powyżej. UI dostaje średnią z 1 miejscem po przecinku.
+- **NEGATIVE**, gdy poziom poniżej oczekiwań LUB którakolwiek ocena = 1 (wyjaśnienie tekstowe w `explanation`).
+- **Blokady**: NEGATIVE → uzasadnienie; IPRZ zawsze; część III tylko dla urzędnika SC i z umotywowaniem.
+- **Kryteria**: obowiązkowe ze schematu (wg typu arkusza) + max 3 dodatkowe, bez powtórzeń i dublowania.
+- **Terminy**: sob./niedz./święto → następny dzień roboczy (święta stałe, Wigilia od 2025, Wielkanoc, Pn. Wielkanocny, Zielone Świątki, Boże Ciało). Nieobecność ciągła > 1 mies. przedłuża ocenę okresową o czas nieobecności (art. 81 ust. 7), nie przedłuża 6-mies. ponownej oceny. Rozmowa rozpoczynająca: 30 dni (7 po negatywnej). Sprzeciw: 7 dni od zapoznania.
+- Istniejące cykle zachowują `schema_version_id` (§ 13).
 
 ## Model danych
-`offices`, `users`, `schema_versions` („prawo jako kod”, `config_json` JSONB), `evaluation_cycles`,
-`employee_notes`, `audit_logs`. Enumy pilnowane CHECK-ami w SQL i `@Enumerated(STRING)` w JPA.
+`offices`, `users`, `schema_versions` (`config_json` JSONB), `evaluation_cycles` (+ pola procesu z V3),
+`employee_notes`, `absences`, `audit_logs`. Enumy pilnowane CHECK-ami w SQL i `@Enumerated(STRING)` w JPA.
 Hibernate `ddl-auto: validate` — schemat zmienia WYŁĄCZNIE Flyway.
 
 ## Zasady pracy
@@ -55,6 +95,12 @@ Hibernate `ddl-auto: validate` — schemat zmienia WYŁĄCZNIE Flyway.
 - Nowa zmienna env → dopisz do `infra/.env.example` z wartością-zaślepką.
 - Przed commitem: `git status` + `git diff --cached` — sprawdź, że nie ma `target/`, `.env`, kluczy.
 - Kontenery aplikacyjne działają jako użytkownik non-root.
+
+### Architektura
+- `rules/` = czysta logika prawa, bez Springa w API metod i bez dostępu do bazy → testy jednostkowe bez kontekstu.
+- `service/` = transakcje, autoryzacja (`Access`), audyt. Serwisy nie zależą od `api/`.
+- Autoryzacja w cyklu opiera się na relacji (`evaluatorId`/`employeeId`), nie tylko na roli.
+- Czas wyłącznie przez wstrzyknięty `Clock` (testowalność).
 
 ### Clean Code
 - Małe klasy i metody o jednej odpowiedzialności; nazwy mówią *co*, nie *jak*.
