@@ -1,26 +1,65 @@
-# OS / IDE
+# ===== Sekrety (NIGDY do repo) =====
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+secrets/
+credentials*.json
+application-local.yml
+application-local.properties
+
+# ===== OS =====
 .DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== IDE =====
 .idea/
 *.iml
+*.ipr
+*.iws
 .vscode/
+.project
+.classpath
+.settings/
 *.swp
-# Java / Maven
+*~
+
+# ===== Java / Maven =====
 target/
+build/
+out/
 *.class
 *.log
+hs_err_pid*
 .mvn/wrapper/maven-wrapper.jar
-# Node
+
+# ===== Node =====
 node_modules/
 dist/
 .next/
+.nuxt/
+coverage/
+.turbo/
 npm-debug.log*
-# Python
+yarn-error.log*
+pnpm-debug.log*
+
+# ===== Python =====
 __pycache__/
 *.py[cod]
 .venv/
 venv/
 .pytest_cache/
-# Env
-.env
-.env.*
-!.env.example
+.mypy_cache/
+.ruff_cache/
+
+# ===== Docker =====
+docker-compose.override.yml
+
+# ===== Claude Code (lokalne ustawienia) =====
+.claude/settings.local.json

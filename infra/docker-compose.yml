@@ -1,0 +1,67 @@
+name: oceny
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: oceny-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?brak POSTGRES_DB w infra/.env}
+      POSTGRES_USER: ${POSTGRES_USER:?brak POSTGRES_USER w infra/.env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?brak POSTGRES_PASSWORD w infra/.env}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [backend]
+
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: oceny-gotenberg
+    restart: unless-stopped
+    ports:
+      - "${GOTENBERG_PORT:-3001}:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks: [backend]
+
+  backend-core:
+    build: ../backend-core
+    image: oceny/backend-core:latest
+    container_name: oceny-backend-core
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      GOTENBERG_URL: http://gotenberg:3000
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      gotenberg:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 3s
+      start_period: 40s
+      retries: 10
+    networks: [backend]
+
+  # ai-gateway i frontend zostaną dodane w kolejnych etapach.
+
+volumes:
+  pgdata:
+
+networks:
+  backend:
