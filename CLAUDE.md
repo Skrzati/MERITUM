@@ -60,8 +60,9 @@
     ├── next.config.mjs       # rewrites: /api/ai/* -> ai-gateway, /api/* -> backend-core (wyliczane w czasie builda!)
     ├── tailwind.config.ts    # paleta `gov` (gov.pl) + tokeny `navy` przemapowane na niebieski gov.pl
     └── src/
-        ├── app/              # strony: / (pulpit + modal nowego cyklu), /cycles/[id] (6 zakładek), /hr, /stats,
-        │                     #   /audit (dziennik audytu), /wellbeing (ankieta dobrostanu), /admin
+        ├── app/              # strony: / (pulpit + modal nowego cyklu), /cycles/[id] (6 zakładek), /hr (zaległości +
+        │                     #   eskalacja, raport CSV, kadry), /stats, /audit (dziennik, filtr AI, maskedPrompt),
+        │                     #   /wellbeing (ankieta + klauzula RODO), /admin (wizualny kreator schematów)
         ├── components/       # Header (pasek RP, nawigacja, dzwonek powiadomień, rola demo), LoginModal (SSO AD / Węzeł
         │                     #   Krajowy — symulacja), PrivacyNotice (RODO art. 13, AI Act art. 26/50), UserProvider,
         │                     #   RoleGate, ui.tsx (kit gov.pl), cycle/* (CriteriaTab, InterviewTab, NotesTab,
@@ -239,6 +240,16 @@ Hibernate `ddl-auto: validate` — schemat zmienia WYŁĄCZNIE Flyway.
   termin decyzji DG).
 - Pulpit: „+ Nowy cykl oceny” (HR / bezpośredni przełożony), status terminu, badge art. 89 ust. 2, „Rozpocznij kolejny cykl”.
 - Styl gov.pl: kolory wyłącznie z palety `gov`/`navy` (bez osobnego koloru dla AI — przycisk AI to niebieski kontur).
+- `/admin` — kreator schematów bez ręcznej edycji JSON-a: formularz wstępnie wypełniony z najnowszej wersji (kod, data
+  wejścia w życie, okres w miesiącach, maks. 0–3 kryteriów dodatkowych, kryteria własne), tabela kryteriów (nazwa, opisy
+  zachowań, checkboxy obowiązkowości [A] [B] [C], dodawanie/usuwanie nowych). Pozostałe klucze `config` przejmowane z
+  wersji bazowej; walidacja wyłącznie w backendzie (`CriteriaCatalog.from`, 422). JSON tylko w zwiniętym podglądzie dla IT.
+  Przy każdej wersji „Pobierz pakiet reguł (.json)”.
+- `/hr` — karta „Zaległości i drabina eskalacji” (`/api/hr/overdue`, badge szczebla, „Zmień oceniającego” → formularz
+  handover z ustawionym pracownikiem) i „Pobierz raport sprawozdawczy (CSV)” (`/api/hr/reports/export`).
+- `/audit` — `?limit=100`, filtr „Tylko interakcje AI” (`action` z prefiksem `AI_`), `ModeBadge` z `payload.mode`,
+  `MaskedPrompt` z `payload.maskedPrompt`, surowy payload w `<details>`.
+- Pobieranie plików (PDF, .ics, CSV, pakiet reguł) wyłącznie przez `download()` z `lib/api.ts` (nagłówek uwierzytelnienia).
 - Uprawnienia w UI wynikają z relacji do cyklu (evaluatorId/employeeId), tak jak w backendzie; UI tylko ukrywa akcje, decyduje backend.
 - Reguły prawa nie są duplikowane w UI: katalog kryteriów z `/api/schemas/{id}`, wynik oceny z silnika reguł (średnia w UI to tylko podgląd).
 - Dostępność: WCAG 2.1 AA — etykiety pól, focus-visible, role tablist/tab, `aria-*`, kontrast gov-blue (#0052A5) na bieli.

@@ -1,15 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useRef, useState } from "react";
 import { RoleGate } from "@/components/RoleGate";
 import { Alert, Badge, Button, Card, Field, inputClass, ProblemAlert, Spinner } from "@/components/ui";
 import { useUser } from "@/components/UserProvider";
-import { api, saveBlob } from "@/lib/api";
-import { formatDate, ROLE_LABEL, today } from "@/lib/labels";
-import type { Cycle, HandoverResult, ImportResult, User } from "@/lib/types";
+import { api, download, saveBlob } from "@/lib/api";
+import { formatDate, ROLE_LABEL, today, type Tone } from "@/lib/labels";
+import type { Cycle, EscalationLevel, HandoverResult, ImportResult, OverdueItem, User } from "@/lib/types";
 import { useAsync } from "@/lib/useAsync";
 
 type SortKey = "fullName" | "email" | "role" | "id";
+
+/** Drabina eskalacji (OverdueRules): 1–7 dni oceniający, 8–14 zastępca, 15–30 kadry, > 30 DG. */
+const ESCALATION: Record<EscalationLevel, { label: string; tone: Tone }> = {
+  OCENIAJACY: { label: "Oceniający (1–7 dni)", tone: "blue" },
+  ZASTEPCA: { label: "Zastępca (8–14 dni)", tone: "amber" },
+  KADRY: { label: "Kadry (15–30 dni)", tone: "amber" },
+  DYREKTOR_GENERALNY: { label: "Dyrektor Generalny (> 30 dni)", tone: "red" },
+};
 
 export default function HrPage() {
   return (
@@ -41,13 +50,94 @@ function HrPanel() {
     }
   };
 
+  const overdue = useAsync(() => api<OverdueItem[]>("/api/hr/overdue"), [current?.id]);
+  const [handoverEmployeeId, setHandoverEmployeeId] = useState("");
+  const handoverRef = useRef<HTMLDivElement>(null);
+  const [reportBusy, setReportBusy] = useState(false);
+
   const refreshAll = async () => {
-    await Promise.all([employees.reload(), reloadUsers()]);
+    await Promise.all([employees.reload(), reloadUsers(), overdue.reload()]);
+  };
+
+  const changeEvaluator = (employeeId: number) => {
+    setHandoverEmployeeId(String(employeeId));
+    handoverRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    handoverRef.current?.querySelector<HTMLSelectElement>("select[data-new-evaluator]")?.focus({ preventScroll: true });
+  };
+
+  const downloadReport = async () => {
+    setReportBusy(true);
+    setExportError(null);
+    try {
+      await download("/api/hr/reports/export", `raport-ocen-${today()}.csv`);
+    } catch (e) {
+      setExportError(e);
+    } finally {
+      setReportBusy(false);
+    }
   };
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-navy-900">Panel Kadr</h1>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gov-text">Panel Kadr</h1>
+          <p className="text-sm text-slate-700">Raport sprawozdawczy jest zanonimizowany (k-anonimizacja po stronie serwera, UTF-8 dla Excela).</p>
+        </div>
+        <Button variant="secondary" onClick={downloadReport} busy={reportBusy}>
+          ⬇ Pobierz raport sprawozdawczy (CSV)
+        </Button>
+      </div>
+
+      <Card title="Zaległości i drabina eskalacji">
+        <p className="mb-3 text-sm text-slate-700">
+          Ocena po terminie nie jest blokowana — system liczy dni opóźnienia i wskazuje szczebel eskalacji.
+        </p>
+        {overdue.loading && <Spinner />}
+        <ProblemAlert error={overdue.error} />
+        {overdue.data && overdue.data.length === 0 && <Alert tone="green">Brak cykli po terminie.</Alert>}
+        {overdue.data && overdue.data.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <caption className="sr-only">Cykle po terminie</caption>
+              <thead className="border-b border-slate-200 text-xs uppercase text-slate-600">
+                <tr>
+                  <th className="py-2 pr-3">Oceniany</th>
+                  <th className="py-2 pr-3">Oceniający</th>
+                  <th className="py-2 pr-3">Termin</th>
+                  <th className="py-2 pr-3">Dni po terminie</th>
+                  <th className="py-2 pr-3">Powód opóźnienia</th>
+                  <th className="py-2 pr-3">Szczebel eskalacji</th>
+                  <th className="py-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {overdue.data.map((o) => (
+                  <tr key={o.cycleId} className="border-b border-slate-100 align-top last:border-0">
+                    <td className="py-2 pr-3 font-medium">
+                      <Link href={`/cycles/${o.cycleId}`} className="text-gov-blue underline">
+                        {o.employeeName ?? `#${o.employeeId}`}
+                      </Link>
+                    </td>
+                    <td className="py-2 pr-3">{o.evaluatorName ?? `#${o.evaluatorId}`}</td>
+                    <td className="py-2 pr-3">{formatDate(o.dueDate)}</td>
+                    <td className="py-2 pr-3 font-bold text-red-800">{o.overdueDays}</td>
+                    <td className="py-2 pr-3">{o.delayReason ?? <span className="text-slate-500">nie podano</span>}</td>
+                    <td className="py-2 pr-3">
+                      <Badge tone={ESCALATION[o.escalationLevel].tone}>{ESCALATION[o.escalationLevel].label}</Badge>
+                    </td>
+                    <td className="py-2 text-right">
+                      <Button variant="secondary" onClick={() => changeEvaluator(o.employeeId)}>
+                        Zmień oceniającego
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
 
       <Card title="Pracownicy urzędu">
         <div className="mb-4 grid gap-3 sm:grid-cols-3">
@@ -104,7 +194,9 @@ function HrPanel() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <AbsenceForm employees={list} />
-        <HandoverForm employees={list} onDone={refreshAll} />
+        <div ref={handoverRef} id="handover">
+          <HandoverForm employees={list} employeeId={handoverEmployeeId} onEmployeeChange={setHandoverEmployeeId} onDone={refreshAll} />
+        </div>
         <CsvImport onDone={refreshAll} />
       </div>
     </div>
@@ -162,8 +254,17 @@ function AbsenceForm({ employees }: { employees: User[] }) {
   );
 }
 
-function HandoverForm({ employees, onDone }: { employees: User[]; onDone: () => Promise<void> }) {
-  const [employeeId, setEmployeeId] = useState("");
+function HandoverForm({
+  employees,
+  employeeId,
+  onEmployeeChange,
+  onDone,
+}: {
+  employees: User[];
+  employeeId: string;
+  onEmployeeChange: (id: string) => void;
+  onDone: () => Promise<void>;
+}) {
   const [evaluatorId, setEvaluatorId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -186,9 +287,9 @@ function HandoverForm({ employees, onDone }: { employees: User[]; onDone: () => 
   return (
     <Card title="Zmiana przełożonego (Handover)">
       <div className="space-y-3">
-        <EmployeeSelect employees={employees} value={employeeId} onChange={setEmployeeId} />
+        <EmployeeSelect employees={employees} value={employeeId} onChange={onEmployeeChange} />
         <Field label="Nowy oceniający">
-          <select className={inputClass} value={evaluatorId} onChange={(e) => setEvaluatorId(e.target.value)}>
+          <select data-new-evaluator className={inputClass} value={evaluatorId} onChange={(e) => setEvaluatorId(e.target.value)}>
             <option value="">— wybierz —</option>
             {evaluators.map((u) => (
               <option key={u.id} value={u.id}>
