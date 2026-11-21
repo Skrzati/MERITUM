@@ -1,0 +1,5 @@
+package pl.gov.kprm.oceny.domain;
+
+public enum CycleStatus {
+    DRAFT_CRITERIA, CRITERIA_CONFIRMED, OBSERVATION, EVALUATION_DRAFT, AWAITING_ACK, COMPLETED, APPEALED
+}

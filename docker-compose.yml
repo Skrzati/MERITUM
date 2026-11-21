@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: oceny-postgres
+    environment:
+      POSTGRES_DB: oceny
+      POSTGRES_USER: oceny
+      POSTGRES_PASSWORD: oceny
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oceny -d oceny"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: oceny-gotenberg
+    ports:
+      - "3001:3000"
+
+volumes:
+  pgdata:
