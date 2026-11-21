@@ -1,7 +1,17 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { accessToken, api, currentUserId, errorMessage, fallbackToDemoHeader, govLogin, identityProviderLabel } from "@/lib/api";
+import {
+  accessToken,
+  api,
+  AUTH_EXPIRED_EVENT,
+  currentUserId,
+  errorMessage,
+  govLogin,
+  identityProviderLabel,
+  logout as clearLogin,
+  wasLoggedOut,
+} from "@/lib/api";
 import type { User } from "@/lib/types";
 
 interface UserContextValue {
@@ -11,7 +21,13 @@ interface UserContextValue {
   error: string | null;
   /** Etykieta dostawcy tożsamości bieżącej sesji (SSO / Węzeł Krajowy — symulacja). */
   identityProvider: string | null;
+  /** Okno logowania — otwierane ręcznie, po wylogowaniu i po wygaśnięciu sesji. */
+  loginOpen: boolean;
+  sessionExpired: boolean;
+  openLogin: () => void;
+  closeLogin: () => void;
   switchTo: (user: User, providerLabel?: string) => Promise<void>;
+  logout: () => void;
   userName: (id: number | null | undefined) => string;
   userById: (id: number | null | undefined) => User | undefined;
   reloadUsers: () => Promise<void>;
@@ -26,35 +42,40 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [identityProvider, setIdentityProvider] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
 
-  /** gov-login → JWT; gdy backend jest niedostępny dla logowania, zostaje fallback X-Demo-User-Id. */
+  /** gov-login → JWT. Błąd logowania jest pokazywany — bez cichego przejścia na nagłówek demo. */
   const signIn = useCallback(async (user: User, providerLabel?: string) => {
     try {
       await govLogin(user.id, providerLabel);
-    } catch {
-      fallbackToDemoHeader(user.id);
+      setIdentityProvider(identityProviderLabel());
+      setCurrent(user);
+      setSessionExpired(false);
+      setLoginOpen(false);
+      setError(null);
+    } catch (e) {
+      setError(`Logowanie nie powiodło się: ${errorMessage(e)}`);
+      setLoginOpen(true);
     }
-    setIdentityProvider(identityProviderLabel());
-    setCurrent(user);
   }, []);
 
   const reloadUsers = useCallback(async () => {
     try {
       const list = await api<User[]>("/api/auth/demo-users");
       setUsers(list);
-      const storedId = Number(currentUserId());
-      const stored = list.find((u) => u.id === storedId);
-      const chosen = stored ?? list.find((u) => u.role === DEFAULT_ROLE) ?? list[0];
-      if (chosen) {
-        // Pierwsze uruchomienie (brak tokena) — automatyczne logowanie jako Kierownik, bez ściany logowania.
-        if (stored && accessToken()) {
-          setIdentityProvider(identityProviderLabel());
-          setCurrent(stored);
-        } else {
-          await signIn(chosen);
-        }
-      }
       setError(null);
+      const stored = list.find((u) => u.id === Number(currentUserId()));
+      if (stored && accessToken()) {
+        setIdentityProvider(identityProviderLabel());
+        setCurrent(stored);
+      } else if (wasLoggedOut()) {
+        setLoginOpen(true);
+      } else {
+        // Pierwsze uruchomienie — automatyczne logowanie jako Kierownik, bez ściany logowania dla jury.
+        const chosen = list.find((u) => u.role === DEFAULT_ROLE) ?? list[0];
+        if (chosen) await signIn(chosen);
+      }
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -66,6 +87,25 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     void reloadUsers();
   }, [reloadUsers]);
 
+  useEffect(() => {
+    const onExpired = () => {
+      setCurrent(null);
+      setIdentityProvider(null);
+      setSessionExpired(true);
+      setLoginOpen(true);
+    };
+    window.addEventListener(AUTH_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
+  }, []);
+
+  const logout = useCallback(() => {
+    clearLogin();
+    setCurrent(null);
+    setIdentityProvider(null);
+    setSessionExpired(false);
+    setLoginOpen(true);
+  }, []);
+
   const value = useMemo<UserContextValue>(() => {
     const byId = (id: number | null | undefined) => users.find((u) => u.id === id);
     return {
@@ -74,12 +114,17 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       loading,
       error,
       identityProvider,
+      loginOpen,
+      sessionExpired,
+      openLogin: () => setLoginOpen(true),
+      closeLogin: () => setLoginOpen(false),
       switchTo: signIn,
+      logout,
       userById: byId,
       userName: (id) => byId(id)?.fullName ?? (id ? `#${id}` : "—"),
       reloadUsers,
     };
-  }, [users, current, loading, error, identityProvider, signIn, reloadUsers]);
+  }, [users, current, loading, error, identityProvider, loginOpen, sessionExpired, signIn, logout, reloadUsers]);
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
 }

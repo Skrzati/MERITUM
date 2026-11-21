@@ -15,7 +15,6 @@ public class WellbeingSurvey {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    private Long userId;
     private Long officeId;
     private int workload;
     private int energy;

@@ -14,7 +14,7 @@ type ProviderId = (typeof PROVIDERS)[number]["id"];
 
 /** Okno logowania: oba dostawcy są symulowane — token JWT wydaje backend (POST /api/auth/gov-login). */
 export function LoginModal({ onClose }: { onClose: () => void }) {
-  const { users, current, switchTo } = useUser();
+  const { users, current, switchTo, sessionExpired, error } = useUser();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [provider, setProvider] = useState<ProviderId>("WK");
   const [userId, setUserId] = useState<number>(current?.id ?? users[0]?.id ?? 0);
@@ -32,7 +32,6 @@ export function LoginModal({ onClose }: { onClose: () => void }) {
     setBusy(true);
     await switchTo(user, PROVIDERS.find((p) => p.id === provider)?.label);
     setBusy(false);
-    onClose();
   };
 
   return (
@@ -50,6 +49,13 @@ export function LoginModal({ onClose }: { onClose: () => void }) {
             Logowanie do MERITUM
           </h2>
         </div>
+
+        {sessionExpired && (
+          <Alert tone="amber" title="Sesja wygasła">
+            Token logowania wygasł lub został odrzucony — zaloguj się ponownie.
+          </Alert>
+        )}
+        {error && <Alert tone="red">{error}</Alert>}
 
         <fieldset className="space-y-2">
           <legend className="mb-1 text-sm font-semibold text-gov-text">Sposób logowania</legend>

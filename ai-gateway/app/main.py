@@ -1,3 +1,4 @@
+import json
 from typing import Dict, List, Literal, Optional
 
 from fastapi import FastAPI
@@ -7,7 +8,48 @@ from . import assistants, consistency, criteria_suggest
 from .guardrails import AI_DISCLAIMER
 from .llm import LLMClient
 
-app = FastAPI(title="MERITUM AI & Privacy Gateway", version="0.5.0")
+MAX_BODY_BYTES = 64 * 1024
+PAYLOAD_TOO_LARGE = 413
+
+
+class BodySizeLimit:
+    """Odrzuca żądania > MAX_BODY_BYTES (413) — także bez nagłówka Content-Length (chunked)."""
+
+    def __init__(self, app, max_bytes: int = MAX_BODY_BYTES):
+        self.app, self.max_bytes = app, max_bytes
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        length = dict(scope.get("headers") or []).get(b"content-length")
+        if length is not None and length.isdigit() and int(length) > self.max_bytes:
+            return await self._reject(send)
+        received = 0
+        chunks = []
+        while True:
+            message = await receive()
+            received += len(message.get("body", b""))
+            if received > self.max_bytes:
+                return await self._reject(send)
+            chunks.append(message)
+            if not message.get("more_body"):
+                break
+        pending = iter(chunks)
+
+        async def replay():
+            return next(pending, {"type": "http.request", "body": b"", "more_body": False})
+
+        return await self.app(scope, replay, send)
+
+    async def _reject(self, send):
+        body = json.dumps({"detail": f"Żądanie przekracza limit {self.max_bytes // 1024} KB"}).encode()
+        await send({"type": "http.response.start", "status": PAYLOAD_TOO_LARGE,
+                    "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]})
+        await send({"type": "http.response.body", "body": body})
+
+
+app = FastAPI(title="MERITUM AI & Privacy Gateway", version="0.6.0")
+app.add_middleware(BodySizeLimit)
 llm = LLMClient()
 
 

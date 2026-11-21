@@ -7,11 +7,20 @@ AI_DISCLAIMER = "Wygenerowane przez AI — wymaga weryfikacji i akceptacji prze�
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 _SCORE_PROPOSAL_RES = [
     re.compile(r"\b[13579]\s*(?:pkt|punkt\w*)", re.IGNORECASE),
+    # „7/9”, „9 / 9” — ocena zapisana jako ułamek skali
+    re.compile(r"(?<![\d/])[13579]\s*/\s*9(?![\d/])"),
+    # „zasługuje na 9”, „oceń na 7”, „wystaw 5”, „daj mu dziewiątkę”
+    re.compile(r"\b(?:zasług\w*|zasłuż\w*|oce[nń]\w*|wystaw\w*|przyzna\w*|da[jć]\w*|dostać|otrzyma\w*)\b[^.?!]{0,40}?"
+               r"(?:\bna\s+)?(?<![\d,.])[13579](?![\d,.]\d)(?!\s*(?:dni|mies|lat|osób|proc|%))\b", re.IGNORECASE),
+    re.compile(r"\b(?:jedynk|trójk|piątk|siódemk|dziewiątk)\w*", re.IGNORECASE),
     re.compile(r"\b(?:proponuj\w*|sugeruj\w*|rekomend\w*|należy\s+przyzna\w*|powin\w+\s+otrzyma\w*)\b"
                r"[^.?!]*\b(?:ocen\w*|punkt\w*|pkt|\d)", re.IGNORECASE),
 ]
-_MEDICAL_RE = re.compile(r"\b(?:diagnoz\w*|depresj\w*|zaburze\w*|chorob\w*|leczeni\w*|terapi\w*|psychiatr\w*)",
-                         re.IGNORECASE)
+_MEDICAL_RE = re.compile(
+    r"\b(?:diagnoz\w*|depresj\w*|zaburze\w*|chorob\w*|leczeni\w*|terapi\w*|psychiatr\w*|bezsenn\w*|nerwic\w*|"
+    r"lęk\w*|uzależni\w*|antydepres\w*|farmakoter\w*|samobój\w*|nadciśnieni\w*|cukrzyc\w*|migren\w*|"
+    r"niepełnospraw\w*|ciąż\w*|nowotw\w*)",
+    re.IGNORECASE)
 
 
 def _filter_sentences(text: str, patterns: List[re.Pattern]) -> str:

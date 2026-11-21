@@ -15,6 +15,8 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Stream;
 
 /** Oceny po terminie: termin nie blokuje sporządzenia oceny, ale opóźnienie jest eskalowane. */
 @Service
@@ -32,9 +34,13 @@ public class OverdueService {
     public List<OverdueItem> overdue(User user) {
         Access.requireRole(user, Role.HR, Role.DG);
         LocalDate today = LocalDate.now(clock);
-        return cycles.findByOfficeIdOrderByIdAsc(user.getOfficeId()).stream()
-                .map(c -> toItem(c, OverdueRules.overdueDays(c.getDueDate(), today, awaitingEvaluation(c))))
-                .filter(i -> i.overdueDays() > 0)
+        List<EvaluationCycle> late = cycles.findByOfficeIdOrderByIdAsc(user.getOfficeId()).stream()
+                .filter(c -> OverdueRules.overdueDays(c.getDueDate(), today, awaitingEvaluation(c)) > 0)
+                .toList();
+        Map<Long, String> names = UserNames.byId(users,
+                late.stream().flatMap(c -> Stream.of(c.getEmployeeId(), c.getEvaluatorId())).toList());
+        return late.stream()
+                .map(c -> toItem(c, OverdueRules.overdueDays(c.getDueDate(), today, true), names))
                 .sorted(Comparator.comparingLong(OverdueItem::overdueDays).reversed())
                 .toList();
     }
@@ -43,12 +49,8 @@ public class OverdueService {
         return c.getStatus().isActive() && c.getEvaluatedOn() == null;
     }
 
-    private OverdueItem toItem(EvaluationCycle c, long days) {
-        return new OverdueItem(c.getId(), c.getEmployeeId(), name(c.getEmployeeId()), c.getEvaluatorId(),
-                name(c.getEvaluatorId()), c.getDueDate(), days, c.getDelayReason(), OverdueRules.escalationLevel(days));
-    }
-
-    private String name(Long id) {
-        return users.findById(id).map(User::getFullName).orElse(null);
+    private static OverdueItem toItem(EvaluationCycle c, long days, Map<Long, String> names) {
+        return new OverdueItem(c.getId(), c.getEmployeeId(), names.get(c.getEmployeeId()), c.getEvaluatorId(),
+                names.get(c.getEvaluatorId()), c.getDueDate(), days, c.getDelayReason(), OverdueRules.escalationLevel(days));
     }
 }

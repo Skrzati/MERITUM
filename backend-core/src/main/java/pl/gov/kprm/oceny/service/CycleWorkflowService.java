@@ -3,6 +3,8 @@ package pl.gov.kprm.oceny.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pl.gov.kprm.oceny.domain.*;
@@ -39,6 +41,19 @@ public class CycleWorkflowService {
     private final AuditService audit;
     private final ObjectMapper json;
     private final Clock clock;
+
+    @Transactional(readOnly = true)
+    public List<EvaluationCycle> visibleFor(User user, Optional<PageRequest> page) {
+        if (page.isEmpty()) {
+            return visibleFor(user);
+        }
+        Pageable p = page.get();
+        return switch (user.getRole()) {
+            case KPRM_ADMIN -> cycles.findAllByOrderByIdAsc(p);
+            case HR, DG -> cycles.findByOfficeIdOrderByIdAsc(user.getOfficeId(), p);
+            case EVALUATOR, EVALUATED -> cycles.findByEmployeeIdOrEvaluatorIdOrderByIdAsc(user.getId(), user.getId(), p);
+        };
+    }
 
     @Transactional(readOnly = true)
     public List<EvaluationCycle> visibleFor(User user) {
@@ -312,6 +327,10 @@ public class CycleWorkflowService {
     @Transactional(readOnly = true)
     public HrFacts hrFacts(Long id, User user) {
         EvaluationCycle cycle = get(id, user);
+        // D4: oceniany nie widzi metadanych roboczych notatek przełożonego (liczba, data ostatniej)
+        if (user.getRole() == Role.EVALUATED || user.getId().equals(cycle.getEmployeeId())) {
+            throw forbidden("Fakty dla HR Partnera są dostępne dla przełożonego i kadr, nie dla ocenianego");
+        }
         LocalDate today = LocalDate.now(clock);
         LocalDate periodEnd = cycle.getDueDate().isBefore(today) ? cycle.getDueDate() : today;
         long absenceDays = absences.findByUserIdOrderByStartDateAsc(cycle.getEmployeeId()).stream()

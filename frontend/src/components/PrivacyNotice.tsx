@@ -68,8 +68,8 @@ export function PrivacyNotice() {
               oznaczona (art. 50). Każde wywołanie AI jest rejestrowane w dzienniku audytu (art. 26).
             </li>
             <li>
-              Ankieta dobrostanu jest dobrowolna, niepowiązana z oceną i raportowana wyłącznie zbiorczo (k-anonimizacja). Prawo
-              dostępu do danych (art. 15 RODO) realizują kadry.
+              Ankieta dobrostanu jest dobrowolna i technicznie anonimowa — zapisywana bez identyfikatora osoby, niepowiązana z
+              oceną i raportowana wyłącznie zbiorczo (k-anonimizacja). Prawo dostępu do danych (art. 15 RODO) realizują kadry.
             </li>
           </ul>
         )}

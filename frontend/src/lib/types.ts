@@ -24,7 +24,8 @@ export interface User {
   id: number;
   officeId: number;
   fullName: string;
-  email: string;
+  /** Brak w /api/auth/demo-users (endpoint publiczny) — tylko w danych kadrowych. */
+  email?: string;
   role: Role;
   civilServant: boolean;
   supervisorId: number | null;

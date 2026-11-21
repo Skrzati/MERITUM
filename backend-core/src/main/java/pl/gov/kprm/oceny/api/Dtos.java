@@ -16,6 +16,18 @@ public final class Dtos {
     private Dtos() {
     }
 
+    /**
+     * Konto do wyboru w logowaniu demo (endpoint publiczny) — bez e-maila i dat kadrowych; pola stanowiska i stopnia
+     * są potrzebne interfejsowi (podpowiedź kryteriów, blokada wniosku przy 9. stopniu).
+     */
+    public record DemoUserDto(Long id, Long officeId, String fullName, Role role, boolean civilServant, Long supervisorId,
+                              String department, String positionTitle, Integer civilServiceGrade) {
+        public static DemoUserDto of(User u) {
+            return new DemoUserDto(u.getId(), u.getOfficeId(), u.getFullName(), u.getRole(), u.isCivilServant(),
+                    u.getSupervisorId(), u.getDepartment(), u.getPositionTitle(), u.getCivilServiceGrade());
+        }
+    }
+
     public record UserDto(Long id, Long officeId, String fullName, String firstName, String lastName, String email,
                           Role role, boolean civilServant, Long supervisorId, String department, String positionTitle,
                           Integer appointmentYear, Integer civilServiceGrade, LocalDate lastGradeDate) {
@@ -103,14 +115,6 @@ public final class Dtos {
         }
     }
 
-    public record WellbeingDto(Long id, int workload, int energy, int support, boolean wantsConversation,
-                               OffsetDateTime submittedAt) {
-        public static WellbeingDto of(WellbeingSurvey w) {
-            return new WellbeingDto(w.getId(), w.getWorkload(), w.getEnergy(), w.getSupport(),
-                    w.isWantsConversation(), w.getSubmittedAt());
-        }
-    }
-
     public record RescheduleDto(Long id, Long cycleId, RescheduleMode mode, int statutePoint, RescheduleStatus status,
                                 String reason, LocalDate previousDueDate, LocalDate proposedDueDate,
                                 LocalDate newDueDate, String noticeText, Long requestedBy, Long decidedBy,
@@ -137,15 +141,13 @@ public final class Dtos {
     }
 
     public record GdprExportDto(UserDto user, List<CycleDto> cycles, List<NoteDto> notes, List<AbsenceDto> absences,
-                                List<HistoryDto> evaluationHistory, List<WellbeingDto> wellbeingSurveys,
-                                List<AuditDto> auditLogs) {
+                                List<HistoryDto> evaluationHistory, List<AuditDto> auditLogs) {
         public static GdprExportDto of(GdprExport e) {
             return new GdprExportDto(UserDto.of(e.user()),
                     e.cycles().stream().map(CycleDto::of).toList(),
                     e.notes().stream().map(NoteDto::of).toList(),
                     e.absences().stream().map(AbsenceDto::of).toList(),
                     e.evaluationHistory().stream().map(HistoryDto::of).toList(),
-                    e.wellbeingSurveys().stream().map(WellbeingDto::of).toList(),
                     e.auditLogs().stream().map(AuditDto::of).toList());
         }
     }

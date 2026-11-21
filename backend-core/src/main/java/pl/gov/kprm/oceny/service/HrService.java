@@ -34,7 +34,6 @@ public class HrService {
     private final SchemaVersionRepository schemas;
     private final AuditLogRepository auditLogs;
     private final EvaluationHistoryRepository history;
-    private final WellbeingSurveyRepository wellbeing;
     private final DeadlineService deadlines;
     private final AuditService audit;
 
@@ -47,14 +46,19 @@ public class HrService {
 
     public record GdprExport(User user, List<EvaluationCycle> cycles, List<EmployeeNote> notes,
                              List<Absence> absences, List<EvaluationHistory> evaluationHistory,
-                             List<WellbeingSurvey> wellbeingSurveys, List<AuditLog> auditLogs) {
+                             List<AuditLog> auditLogs) {
     }
 
     @Transactional(readOnly = true)
-    public List<User> employees(User hr, String query, String sortBy, Sort.Direction direction) {
+    public List<User> employees(User hr, String query, String sortBy, Sort.Direction direction,
+                                Integer page, Integer size) {
         requireRole(hr, Role.HR);
         String property = SORTABLE.contains(sortBy) ? sortBy : "fullName";
-        return users.search(hr.getOfficeId(), query == null ? "" : query.trim(), Sort.by(direction, property));
+        Sort sort = Sort.by(direction, property);
+        String q = query == null ? "" : query.trim();
+        return Paging.of(page, size, sort)
+                .map(p -> users.search(hr.getOfficeId(), q, p))
+                .orElseGet(() -> users.search(hr.getOfficeId(), q, sort));
     }
 
     public List<EvaluationCycle> registerAbsence(User hr, Long userId, LocalDate start, LocalDate end, String reason) {
@@ -151,7 +155,6 @@ public class HrService {
                 notes.findByCycleIdInOrAuthorIdOrderByCreatedAtAsc(cycleIds, employee.getId()),
                 absences.findByUserIdOrderByStartDateAsc(employee.getId()),
                 history.findByUserIdOrderByEvaluatedOnAsc(employee.getId()),
-                wellbeing.findByUserIdOrderBySubmittedAtAsc(employee.getId()),
                 auditLogs.findByActorIdOrEntityTypeAndEntityIdInOrderByCreatedAtAsc(employee.getId(),
                         AuditService.CYCLE, cycleIds));
         audit.log(hr, hr.getOfficeId(), "GDPR_EXPORT", AuditService.USER, employee.getId(), Map.of());

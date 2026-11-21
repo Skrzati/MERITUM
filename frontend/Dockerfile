@@ -8,8 +8,7 @@ FROM node:22-alpine AS build
 WORKDIR /app
 # rewrites są wyliczane w czasie builda -> adresy usług w sieci Dockera
 ARG BACKEND_CORE_URL=http://backend-core:8080
-ARG AI_GATEWAY_URL=http://ai-gateway:8000
-ENV BACKEND_CORE_URL=$BACKEND_CORE_URL AI_GATEWAY_URL=$AI_GATEWAY_URL NEXT_TELEMETRY_DISABLED=1
+ENV BACKEND_CORE_URL=$BACKEND_CORE_URL NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build

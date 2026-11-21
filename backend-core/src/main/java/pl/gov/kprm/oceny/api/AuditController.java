@@ -16,7 +16,9 @@ public class AuditController {
     private final AuditService audit;
 
     @GetMapping
-    public List<AuditDto> recent(@CurrentUser User user, @RequestParam(defaultValue = "50") int limit) {
-        return audit.recent(user, limit).stream().map(AuditDto::of).toList();
+    public List<AuditDto> recent(@CurrentUser User user, @RequestParam(defaultValue = "50") int limit,
+                                 @RequestParam(required = false) Integer page,
+                                 @RequestParam(required = false) Integer size) {
+        return audit.recent(user, limit, page, size).stream().map(AuditDto::of).toList();
     }
 }

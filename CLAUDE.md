@@ -9,7 +9,8 @@
 ├── CLAUDE.md                 # ten plik — źródło prawdy o strukturze i zasadach
 ├── README.md                 # quickstart
 ├── docs/analiza-kprm.md      # analiza oficjalnych materiałów KPRM (wzory, use cases, BPMN, arkusze wzorcowe)
-├── Makefile                  # make up / down / reset / logs / ps / build
+├── Makefile                  # make up / down / reset / logs / ps / build / loadtest
+├── loadtest/                 # meritum_attack_load.py — obciążenie + scenariusze ataku na działający stos (stdlib)
 ├── infra/                    # wszystko do uruchamiania w Dockerze
 │   ├── docker-compose.yml    # postgres, gotenberg, backend-core, ai-gateway, frontend (sieć: backend)
 │   └── .env.example          # wzór zmiennych; infra/.env jest gitignorowany
@@ -32,6 +33,7 @@
 │       │   ├── export/       # czyste renderery: IcsCalendarRenderer (RFC 5545), CsvReportRenderer (BOM, „;”, <k)
 │       │   ├── repository/   # Spring Data JPA
 │       │   ├── auth/         # JwtService (HS256), CurrentUserFilter (Bearer JWT / X-Demo-User-Id), SecurityHeadersFilter,
+│       │   │                 #   RateLimitFilter (429 dla gov-login i core-ai), WebConfig (CORS z app.cors.allowed-origins),
 │       │   │                 #   @CurrentUser resolver
 │       │   └── api/          # kontrolery REST, Dtos, Requests, CycleMapper, ApiExceptionHandler (RFC 7807)
 │       └── resources/
@@ -39,25 +41,30 @@
 │           │                            #   DEMO_HEADER_ENABLED, STATS_K_ANONYMITY)
 │           └── db/migration/            # Flyway: V1 schemat, V2 seed, V3 workflow + absences, V4 kryteria v1 (§ 4),
 │                                        #   V5 pola wzoru KPRM + historia/dobrostan/zakres/terminy + opisy kryteriów + seed demo,
-│                                        #   V6 delay_reason + signature_method + 2 cykle po terminie (ustalenia z mentorami)
-│   └── src/test/                        # JUnit 5: rules/, pdf/, export/, auth/, service/ (jednostkowe) + it/ApiIntegrationTest
+│                                        #   V6 delay_reason + signature_method + 2 cykle po terminie (ustalenia z mentorami),
+│                                        #   V7 anonimowa ankieta dobrostanu (bez user_id, data bez godziny) + spójne uzasadnienie cyklu #9
+│   └── src/test/                        # JUnit 5: rules/, pdf/, export/, auth/ (JwtAttackTest, RateLimitFilterTest), service/
+│                                        #   + it/ApiIntegrationTest, it/SecurityIntegrationTest (IDOR, eskalacja, izolacja urzędów,
+│                                        #   wstrzyknięcia)
 │                                        #   (Testcontainers PostgreSQL: migracje V1–V5, walidacja JPA, scenariusze API);
 │                                        #   resources/docker-java.properties (api.version=1.44 dla Docker Engine 29+)
 ├── ai-gateway/               # Python 3.11 / FastAPI — AI & Privacy Gateway (kod zgodny z 3.9+)
 │   ├── Dockerfile            # python:3.11-slim, user non-root
-│   ├── app/main.py           # endpointy + modele Pydantic
-│   ├── app/pii.py            # mask_pii / unmask_pii / PiiMasker (OSOBA, EMAIL, PESEL, KOMORKA)
+│   ├── app/main.py           # endpointy + modele Pydantic + BodySizeLimit (413 powyżej 64 KB, także chunked)
+│   ├── app/pii.py            # mask_pii / unmask_pii / PiiMasker (OSOBA, EMAIL, PESEL, TELEFON, KOMORKA); koszt liniowy;
+│                             #   WERSALIKI, nazwiska dwuczłonowe, nazwisko po funkcji („z kierownikiem Nowakiem”)
 │   ├── app/llm.py            # klient OpenAI-compatible; brak klucza -> MOCK, błąd -> MOCK_FALLBACK
 │   ├── app/assistants.py     # sokratejski asystent, HR-partner, przygotowanie do rozmów (+ odpowiedzi MOCK)
 │   ├── app/catalog.py        # 14 kryteriów (zał. nr 1) + katalog działań rozwojowych do IPRZ
 │   ├── app/criteria_suggest.py # sugestia max 3 kryteriów dodatkowych spoza obowiązkowych + oczekiwania (§ 5 ust. 1 pkt 3)
 │   ├── app/consistency.py    # deterministyczne reguły spójności arkusza (skalibrowane na arkuszach KPRM)
 │   ├── app/guardrails.py     # brak propozycji punktów, brak treści medycznych, disclaimer AI Act
-│   └── tests/                # pytest: test_pii, test_consistency, test_api, test_kprm_regression, test_suggest_criteria
+│   └── tests/                # pytest: test_pii, test_consistency, test_api, test_kprm_regression, test_suggest_criteria,
+│                             #   test_security (PII, prompt injection, walidacja, limit 64 KB, DoS — regresje luk z audytu)
 │       └── fixtures/kprm_example_sheets.json  # pola 10 arkuszy wzorcowych KPRM + oczekiwane kody błędów
 └── frontend/                 # Next.js 16 (App Router) + TypeScript + Tailwind 3, React 19
     ├── Dockerfile            # node:22-alpine, output standalone, user non-root
-    ├── next.config.mjs       # rewrites: /api/ai/* -> ai-gateway, /api/* -> backend-core (wyliczane w czasie builda!)
+    ├── next.config.mjs       # rewrite: /api/* -> backend-core (wyliczany w czasie builda!); brak trasy do ai-gateway
     ├── tailwind.config.ts    # paleta `gov` (gov.pl) + tokeny `navy` przemapowane na niebieski gov.pl
     └── src/
         ├── app/              # strony: / (pulpit + modal nowego cyklu), /cycles/[id] (6 zakładek), /hr (zaległości +
@@ -74,26 +81,30 @@
 ## Kontenery (`make up`)
 | Kontener | Obraz | Port host | Zależy od |
 |---|---|---|---|
-| oceny-postgres | postgres:16-alpine | 5432 | — |
-| oceny-gotenberg | gotenberg/gotenberg:8 | 3001 | — |
+| oceny-postgres | postgres:16-alpine | 127.0.0.1:5432 (tylko lokalnie) | — |
+| oceny-gotenberg | gotenberg/gotenberg:8 | — (tylko sieć Dockera) | — |
 | oceny-backend-core | build `backend-core/` | 8080 | postgres (healthy), gotenberg (healthy); woła ai-gateway przez `/api/core-ai` |
-| oceny-ai-gateway | build `ai-gateway/` | 8000 | — (env `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_LIVE`, `LLM_MODEL`) |
-| oceny-frontend | build `frontend/` | 3000 | backend-core (healthy), ai-gateway (healthy) |
+| oceny-ai-gateway | build `ai-gateway/` | — (tylko sieć Dockera; AI wyłącznie przez `/api/core-ai/*`) | — (env `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_LIVE`, `LLM_MODEL`) |
+| oceny-frontend | build `frontend/` | 3000 | backend-core (healthy) |
 
 W sieci Dockera serwisy adresują się po nazwach (`postgres:5432`, `gotenberg:3000`).
 
 ## API (backend-core)
 Uwierzytelnianie: `Authorization: Bearer <JWT>` z `POST /api/auth/gov-login` (symulacja Węzła Krajowego / Profilu
 Zaufanego, HS256) albo — dla testów/Swaggera — `X-Demo-User-Id` (wyłączane `DEMO_HEADER_ENABLED=false`).
-Publiczne: `/api/health`, `/api/auth/demo-users`, `/api/auth/gov-login`. Każda odpowiedź ma nagłówki
+Publiczne: `/api/health`, `/api/auth/demo-users` (bez e-maili), `/api/auth/gov-login`. Każda odpowiedź ma nagłówki
 `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`
 (+ `Cache-Control: no-store` dla `/api`).
-Błędy: 403 brak uprawnień, 404 brak zasobu, 409 niedozwolone przejście stanu, 422 naruszenie reguł (`violations`, opcjonalnie `result`).
+Błędy: 400 złe parametry (np. stronicowanie), 403 brak uprawnień, 404 brak zasobu, 409 niedozwolone przejście stanu,
+413 za duże żądanie AI (> `app.ai.max-request-bytes`, 64 KB), 422 naruszenie reguł (`violations`, opcjonalnie `result`),
+429 rate-limit (`Retry-After`; okno 60 s: `gov-login` 30 / adres klienta, `core-ai` 60 / użytkownik — `app.rate-limit.*`).
+Stronicowanie (opcjonalne, wstecznie zgodne): `GET /api/cycles`, `/api/hr/employees`, `/api/audit-logs` przyjmują
+`page` (od 0) i `size` (1–200); bez parametrów — pełna lista (audyt: `limit`).
 
 | Metoda | Ścieżka | Kto | Efekt |
 |---|---|---|---|
 | GET | `/api/health` | wszyscy | status |
-| GET | `/api/auth/demo-users`, `/api/auth/me` | wszyscy | logowanie demo |
+| GET | `/api/auth/demo-users`, `/api/auth/me` | wszyscy | logowanie demo; demo-users → `DemoUserDto` (bez e-maila i dat kadrowych) |
 | POST | `/api/auth/gov-login` | wszyscy | `{"userId"}` → `{accessToken, tokenType: "Bearer", expiresIn, identityProvider, user}` |
 | GET | `/api/cycles`, `/api/cycles/{id}` | wg roli | KPRM_ADMIN wszystko; HR/DG urząd; strony cyklu; pola `criteriaDeadline`, `mandatoryGradeEligible`, `mandatoryGradeDeadline`, `overdueDays`, `delayReason`, `signatureMethod` |
 | POST | `/api/cycles` | HR / bezpośredni przełożony | `{employeeId, sheetType?, startDate?, reevaluation?}` — **zawsze najnowsza obowiązująca wersja schematu**, termin z jej `period_months` (6 mies. przy ponownej ocenie) |
@@ -111,25 +122,25 @@ Błędy: 403 brak uprawnień, 404 brak zasobu, 409 niedozwolone przejście stanu
 | GET/POST | `/api/cycles/{id}/scope-changes` | HR / oceniający | `{changeDate, newPositionTitle?, description, significant}` → `NONE` \| `CRITERIA_RESET` (§ 9 ust. 1) \| `EVALUATION_REQUIRED` (art. 81 ust. 6) |
 | GET | `/api/cycles/{id}/interview.ics` | jak `GET /api/cycles/{id}` | `text/calendar` (RFC 5545, czas UTC): rozmowa rozpoczynająca przy `DRAFT_CRITERIA` (§ 5 ust. 1), w pozostałych etapach oceniająca (§ 10); data rozmowy z cyklu albo termin kryteriów / oceny, 10:00, 60 min |
 | GET | `/api/cycles/{id}/ezd-package` | jak `GET /api/cycles/{id}` | metadane KRI/EZD RP: `caseId`, `title`, `documentType`, `sheetType`, `office`, `parties`, `status`, `evaluatedOn`, `acknowledgedAt`, `signatureMethod`, `format`, `access`, `legalBasis`, `pdfEndpoint`, `schemaVersion`, `generatedAt` |
-| GET | `/api/cycles/{id}/hr-facts` | jak `GET /api/cycles/{id}` | fakty z bazy dla HR Partnera: `{absenceDays, scopeChangesCount, overloadNotesCount, totalNotesCount, daysSinceLastNote, overdueDays}` |
+| GET | `/api/cycles/{id}/hr-facts` | jak `GET /api/cycles/{id}`, ale **nie oceniany** (D4) | fakty z bazy dla HR Partnera: `{absenceDays, scopeChangesCount, overloadNotesCount, totalNotesCount, daysSinceLastNote, overdueDays}` |
 | GET | `/api/hr/reports/export` | HR, DG | CSV (UTF-8 z BOM, `;`) — te same agregaty co `/api/stats/summary` + eskalacja; liczności 1..k-1 jako `<k`; audyt `REPORT_EXPORTED` |
 | GET | `/api/hr/overdue` | HR, DG | aktywne cykle po terminie (bez sporządzonej oceny), malejąco wg `overdueDays`, z `escalationLevel`: 1–7 OCENIAJACY, 8–14 ZASTEPCA, 15–30 KADRY, > 30 DYREKTOR_GENERALNY |
 | GET | `/api/notifications` | zalogowany | wyliczane w locie dla widocznych cykli: `OVERDUE`, `DUE_SOON` (≤ 30 dni), `CRITERIA_DUE`, `APPEAL_DECISION_DUE`, `MANDATORY_GRADE_DUE`; `{type, severity, cycleId, dueDate, message}` |
 | GET | `/api/admin/schemas/{id}/package` | KPRM_ADMIN | pakiet reguł `meritum-rules-<versionCode>.json` (`format`, `versionCode`, `effectiveFrom`, `periodMonths`, `config`) |
-| GET | `/api/audit-logs?limit=` | HR, DG (urząd), KPRM_ADMIN (wszystko) | ostatnie zdarzenia audytowe |
-| POST | `/api/wellbeing` | każdy (o sobie) | `{workload, energy, support (1–5), wantsConversation}` — bez audytu, bez powiązania z oceną, tylko agregaty |
-| POST | `/api/core-ai/{socratic-draft\|consistency-check\|hr-partner\|interview-prep\|suggest-criteria}?cycleId=` | zalogowany | proxy do ai-gateway + wpis `AI_*` w `audit_logs` (tryb LLM, `maskedPrompt`, kody ostrzeżeń) — AI Act art. 26 |
-| GET | `/api/hr/employees?q=&sort=&dir=` | HR | lista pracowników urzędu |
+| GET | `/api/audit-logs?limit=&page=&size=` | HR, DG (urząd), KPRM_ADMIN (wszystko) | ostatnie zdarzenia audytowe |
+| POST | `/api/wellbeing` | każdy | `{workload, energy, support (1–5), wantsConversation}` — technicznie anonimowa (bez `user_id`, data bez godziny), bez audytu, tylko agregaty |
+| POST | `/api/core-ai/{socratic-draft\|consistency-check\|hr-partner\|interview-prep\|suggest-criteria}?cycleId=` | zalogowany; `socratic-draft`, `hr-partner`, `interview-prep`, `suggest-criteria` — tylko EVALUATOR / DG / HR | proxy do ai-gateway + wpis `AI_*` w `audit_logs` (tryb LLM, `maskedPrompt` przycięty do 4000 znaków, kody ostrzeżeń) — AI Act art. 26 |
+| GET | `/api/hr/employees?q=&sort=&dir=&page=&size=` | HR | lista pracowników urzędu |
 | POST | `/api/hr/absences` | HR | rejestracja nieobecności, przeliczenie `due_date` |
 | POST | `/api/hr/handover` | HR | zmiana przełożonego (§ 9 ust. 3) |
 | POST | `/api/hr/import-csv` (multipart `file`) | HR | `full_name,email,role,is_civil_servant[,supervisor_email]` |
-| GET | `/api/hr/employees/{id}/gdpr-export` | HR | art. 15 RODO (cykle, notatki, nieobecności, historia ocen, ankiety, audyt) |
+| GET | `/api/hr/employees/{id}/gdpr-export` | HR | art. 15 RODO (cykle, notatki, nieobecności, historia ocen, audyt; ankiety są anonimowe — nie wchodzą) |
 | GET/POST | `/api/admin/schemas` | KPRM_ADMIN | wersje schematu („prawo jako kod”) |
 | GET | `/api/schemas/{id}` | każdy zalogowany | odczyt wersji schematu (katalog kryteriów dla UI) |
 | GET | `/api/stats/summary` | DG, HR | tylko agregaty; każda liczność to `{value, suppressed}` — 1..k-1 → `{null, true}` (k z `STATS_K_ANONYMITY`, domyślnie 5); `wellbeing` (średnie tylko przy ≥ k odpowiedziach) |
 | GET | `/api/cycles/{id}/pdf` | jak `GET /api/cycles/{id}` | PDF/A arkusza 1:1 wg wzoru (cz. I–III, średnia z przecinkiem, X w tabeli przyznania oceny, pouczenie art. 83 ust. 1); cz. III tylko urzędnik SC + ocena pozytywna + wniosek; audyt `PDF_EXPORTED` |
 
-## API (ai-gateway, :8000)
+## API (ai-gateway, :8000 — tylko w sieci Dockera; żądania > 64 KB → 413)
 | Metoda | Ścieżka | Efekt |
 |---|---|---|
 | GET | `/health` | status, `llm_mode` (LIVE / MOCK) |
@@ -196,7 +207,16 @@ Hibernate `ddl-auto: validate` — schemat zmienia WYŁĄCZNIE Flyway.
 - Kontenery aplikacyjne działają jako użytkownik non-root.
 - JWT podpisywany HMAC-SHA256 kluczem z `JWT_SECRET` (min. 32 bajty); weryfikacja w czasie stałym, kontrola `exp` i `iss`.
 - Statystyki: k-anonimizacja egzekwowana w backendzie — surowe liczności 1..k-1 nie trafiają do JSON.
-- Ankieta dobrostanu: dobrowolna, bez audytu i bez powiązania z cyklem; widoczna wyłącznie zbiorczo (i w eksporcie art. 15 dla osoby).
+- Ankieta dobrostanu: dobrowolna, technicznie anonimowa (bez `user_id`, czas z dokładnością do dnia), bez audytu
+  i bez powiązania z cyklem; widoczna wyłącznie zbiorczo.
+- Porty hosta: tylko frontend (3000) i backend-core (8080); Postgres na 127.0.0.1, Gotenberg i ai-gateway wyłącznie w sieci
+  Dockera. W produkcji backend-core za reverse proxy z TLS (HSTS, CSP) i `DEMO_HEADER_ENABLED=false`.
+- Rate-limiting (`RateLimitFilter`): logowanie per adres klienta (`X-Forwarded-For` tylko przy
+  `app.rate-limit.trust-forwarded-for=true`, czyli gdy backend stoi za proxy), AI per użytkownik; stan w pamięci procesu.
+- Limity rozmiaru AI: 64 KB w backend-core (`AiProxyService`) i w ai-gateway (`BodySizeLimit`); `maskedPrompt` w audycie
+  przycinany do `app.ai.audit-prompt-max-chars`.
+- Masker PII ma koszt liniowy — nowe wyrażenia regularne nie mogą wracać po długich ciągach (test DoS w `test_security`).
+- Listy z wieloma osobami pobierają imiona jednym zapytaniem (`UserNames.byId`) — bez `findById` w pętli (N+1).
 
 ### Architektura
 - `rules/` = czysta logika prawa, bez Springa w API metod i bez dostępu do bazy → testy jednostkowe bez kontekstu.
@@ -226,8 +246,10 @@ Hibernate `ddl-auto: validate` — schemat zmienia WYŁĄCZNIE Flyway.
 
 ### Frontend
 - Przeglądarka rozmawia wyłącznie z Next.js (proxy przez rewrites) — brak CORS, adresy usług tylko w build args.
-- Wszystkie wywołania przez `lib/api.ts`: `Authorization: Bearer <JWT>` z `POST /api/auth/gov-login` (token w
-  `localStorage`), `X-Demo-User-Id` tylko gdy brak tokena; 401 → usunięcie tokena i jedno ponowienie; błędy RFC 7807 -> `ApiError`.
+- Wszystkie wywołania przez `lib/api.ts`: wyłącznie `Authorization: Bearer <JWT>` z `POST /api/auth/gov-login` (token w
+  `localStorage`); frontend nie wysyła `X-Demo-User-Id`. 401 → wyczyszczenie sesji i zdarzenie `meritum:auth-expired`
+  (UserProvider otwiera okno logowania „Sesja wygasła”); „Wyloguj” blokuje automatyczne logowanie do ponownego wyboru
+  konta. Błędy RFC 7807 -> `ApiError`.
 - Pierwsze uruchomienie: automatyczny gov-login jako Kierownik (bez ściany logowania); zmiana roli = nowy gov-login.
 - Wywołania AI tylko przez `coreAi(operation, cycleId)` → `/api/core-ai/*` (audyt AI Act art. 26).
 - Typy w `lib/types.ts` muszą odpowiadać `Dtos.java` / modelom Pydantic — zmiana DTO = zmiana typów. Żadnych lokalnych
@@ -262,6 +284,11 @@ Hibernate `ddl-auto: validate` — schemat zmienia WYŁĄCZNIE Flyway.
 - Testy integracyjne (`it/`) uruchamiają wszystkie migracje na PostgreSQL w Testcontainers — wymagany działający Docker
   (bez Dockera są pomijane).
 
+### Testy bezpieczeństwa
+- 0 testów `xfail` — luki z audytu 21.11.2026 są naprawione i pilnowane regresjami `test_gap_*` (`ai-gateway`) oraz
+  `SecurityIntegrationTest` / `RateLimitFilterTest` (`backend-core`). Nowa luka = najpierw test, potem poprawka.
+- `make loadtest` nie zmienia stanu cykli, ale tworzy wpisy `LOGIN` / `AI_*` w `audit_logs`.
+
 ### Git
 - Conventional Commits: `feat:`, `fix:`, `chore:`, `refactor:`, `docs:`, `test:`.
 - Jeden commit = jedna logiczna zmiana; CLAUDE.md aktualizowany w tym samym commicie.
@@ -276,4 +303,5 @@ make build     # mvn clean verify lokalnie
 make test      # testy backend-core
 make test-ai   # testy ai-gateway (venv w ai-gateway/.venv)
 make build-fe  # npm ci + next build (frontend)
+make loadtest  # obciążenie + ataki na działający stos (po teście: make reset)
 ```

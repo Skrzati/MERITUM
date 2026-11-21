@@ -68,7 +68,10 @@ export default function WellbeingPage() {
             Kadry i Dyrektor Generalny widzą <strong>wyłącznie agregaty</strong> — średnie pojawiają się dopiero przy co najmniej
             k = 5 odpowiedziach (k-anonimizacja po stronie serwera).
           </li>
-          <li>Swoje odpowiedzi możesz otrzymać w ramach prawa dostępu do danych (art. 15 RODO) za pośrednictwem kadr.</li>
+          <li>
+            Ankieta jest <strong>technicznie anonimowa</strong>: odpowiedź zapisuje się bez Twojego identyfikatora, z datą (bez
+            godziny) — nie da się jej przypisać do osoby ani wydać w eksporcie z art. 15 RODO.
+          </li>
         </ul>
       </section>
 

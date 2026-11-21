@@ -3,6 +3,7 @@ package pl.gov.kprm.oceny.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pl.gov.kprm.oceny.domain.AuditLog;
@@ -38,9 +39,10 @@ public class AuditService {
 
     /** Ostatnie zdarzenia: HR i DG — własny urząd, KPRM_ADMIN — wszystkie urzędy. */
     @Transactional(readOnly = true)
-    public List<AuditLog> recent(User user, int limit) {
+    public List<AuditLog> recent(User user, int limit, Integer pageNumber, Integer size) {
         Access.requireRole(user, Role.HR, Role.DG, Role.KPRM_ADMIN);
-        PageRequest page = PageRequest.of(0, Math.max(1, Math.min(limit, MAX_LIMIT)));
+        PageRequest page = Paging.of(pageNumber, size, Sort.unsorted())
+                .orElseGet(() -> PageRequest.of(0, Math.max(1, Math.min(limit, MAX_LIMIT))));
         return user.getRole() == Role.KPRM_ADMIN
                 ? auditLogs.findAllByOrderByCreatedAtDescIdDesc(page)
                 : auditLogs.findByOfficeIdOrderByCreatedAtDescIdDesc(user.getOfficeId(), page);

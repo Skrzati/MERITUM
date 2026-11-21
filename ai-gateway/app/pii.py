@@ -1,18 +1,34 @@
 """Maskowanie danych osobowych przed wysłaniem tekstu do LLM.
 
-Tokeny: [OSOBA_n], [EMAIL_n], [PESEL_n], [KOMORKA_n] — numerowane, aby unmask_pii był jednoznaczny.
-Ta sama osoba (również w formie odmienionej) dostaje zawsze ten sam token.
+Tokeny: [OSOBA_n], [EMAIL_n], [PESEL_n], [TELEFON_n], [KOMORKA_n] — numerowane, aby unmask_pii był jednoznaczny.
+Ta sama osoba (również w formie odmienionej i pisana WERSALIKAMI) dostaje zawsze ten sam token.
+Koszt liniowy względem długości tekstu — wyrażenia nie mogą wracać po długich ciągach znaków (ochrona przed DoS).
 """
+import bisect
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Dict, Iterable, List, Optional, Tuple
 
 UPPER = "A-ZĄĆĘŁŃÓŚŹŻ"
 LOWER = "a-ząćęłńóśźż"
 
-EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
-PESEL_RE = re.compile(r"(?<!\d)\d{11}(?!\d)")
-CAP_WORD_RE = re.compile(rf"[{UPPER}][{LOWER}]+(?:-[{UPPER}][{LOWER}]+)?")
+# Lookbehind: dopasowanie startuje tylko na początku ciągu znaków adresu — bez tego długi ciąg \w bez „@”
+# był skanowany od każdej pozycji (koszt kwadratowy).
+EMAIL_RE = re.compile(r"(?<![\w.+-])[\w.+-]{1,64}@[\w-]{1,63}(?:\.[\w-]{1,63}){1,8}")
+PESEL_RE = re.compile(r"(?<![\d-])\d{2}[ -]?\d{2}[ -]?\d{2}[ -]?\d{5}(?![\d-])")
+PHONE_RE = re.compile(r"(?<![\d+])(?:(?:\+|00)48[ -]?)?(?:\d{3}[ -]?\d{3}[ -]?\d{3}|\d{2}[ -]\d{3}[ -]\d{2}[ -]\d{2})(?![\d-])")
+# Słowo z wielkiej litery albo WERSALIKAMI (min. 2 litery), opcjonalnie dwuczłonowe z łącznikiem.
+CAP_WORD_RE = re.compile(rf"[{UPPER}][{LOWER}]+(?:-[{UPPER}][{LOWER}]+)?|[{UPPER}]{{2,}}(?:-[{UPPER}]{{2,}})?(?![{LOWER}])")
+# „z kierownikiem Nowakiem” — nazwisko po rzeczowniku funkcyjnym pisanym małą literą.
+FUNCTION_WORD_RE = re.compile(
+    r"\b(?:kierowni|naczelni|dyrektor|zastępc|specjalist|inspektor|radc|referent|koordynator|pracowni|kolega|koleg|"
+    r"koleżank|przełożon|podwładn|asystent|sekretar|ekspert|analityk|doradc|kadrow|referendarz)\w*\s+$")
+FUNCTION_WORD_WINDOW = 30
+# Nazwy instytucji i komórek po rzeczowniku funkcyjnym nie są nazwiskami („naczelnik Wydziału”).
+INSTITUTION_PREFIXES = ("Departament", "Wydzia", "Biur", "Zesp", "Sekcj", "Referat", "Gabinet", "Ministerst", "Urz",
+                        "Kancelari", "Służb", "Komend", "Inspekcj", "Izb", "Agencj", "Instytut", "Centr", "Generaln",
+                        "Prezes", "Rad", "Sąd", "Policj", "Państw", "Krajow", "Wojew", "Powiat", "Gmin")
 UNIT_RE = re.compile(
     rf"\b(?:Departament\w*|Wydzia\w+|Biur\w+|Zesp[oó]\w+|Sekcj\w+|Referat\w*|Gabinet\w*)"
     rf"(?:\s+ds\.)?(?:\s+(?:(?:i|oraz)\s+)?[{UPPER}][\w-]*)+"
@@ -72,9 +88,23 @@ def _inflects(word: str, base: str, endings=DECLENSION_ENDINGS) -> bool:
     return w.startswith(stem) and w[len(stem):] in endings
 
 
+def _norm(word: str) -> str:
+    """WERSALIKI → forma kanoniczna („KOWALSKA-NOWAK” → „Kowalska-Nowak”); pozostałe słowa bez zmian."""
+    return "-".join(p.capitalize() for p in word.split("-")) if word.isupper() else word
+
+
+_NAME_STEMS = [(_stem(n), SHORT_NAME_ENDINGS if len(n) <= SHORT_NAME_LEN else DECLENSION_ENDINGS) for n in FIRST_NAMES]
+
+
+@lru_cache(maxsize=8192)
 def is_first_name(word: str) -> bool:
-    return word in FIRST_NAMES or any(
-        _inflects(word, n, SHORT_NAME_ENDINGS if len(n) <= SHORT_NAME_LEN else DECLENSION_ENDINGS) for n in FIRST_NAMES)
+    word = _norm(word)
+    if "-" in word:  # „Anna-Maria” — imię podwójne
+        return any(is_first_name(part) for part in word.split("-"))
+    if word in FIRST_NAMES:
+        return True
+    w = _fold(word)
+    return any(w.startswith(stem) and w[len(stem):] in endings for stem, endings in _NAME_STEMS)
 
 
 @dataclass
@@ -112,10 +142,13 @@ class PiiMasker:
             return text
         spans = self._fixed_spans(text)
         spans += self._person_spans(text, spans)
-        out = text
-        for s in sorted(self._non_overlapping(spans), key=lambda s: s.start, reverse=True):
-            out = out[:s.start] + self._token(s.kind, s.key, s.original) + out[s.end:]
-        return out
+        parts, pos = [], 0
+        for s in self._non_overlapping(spans):
+            parts.append(text[pos:s.start])
+            parts.append(self._token(s.kind, s.key, s.original))
+            pos = s.end
+        parts.append(text[pos:])
+        return "".join(parts)
 
     def _token(self, kind: str, key: str, original: str) -> str:
         if (kind, key) not in self._tokens:
@@ -127,7 +160,9 @@ class PiiMasker:
 
     def _fixed_spans(self, text: str) -> List[_Span]:
         spans = [_Span(m.start(), m.end(), "EMAIL", m.group().lower(), m.group()) for m in EMAIL_RE.finditer(text)]
-        spans += [_Span(m.start(), m.end(), "PESEL", m.group(), m.group()) for m in PESEL_RE.finditer(text)]
+        spans += [_Span(m.start(), m.end(), "PESEL", re.sub(r"\D", "", m.group()), m.group()) for m in PESEL_RE.finditer(text)]
+        spans += [_Span(m.start(), m.end(), "TELEFON", re.sub(r"\D", "", m.group())[-9:], m.group())
+                  for m in PHONE_RE.finditer(text)]
         for unit in self.known_units:
             for m in re.finditer(re.escape(unit), text, re.IGNORECASE):
                 spans.append(_Span(m.start(), m.end(), "KOMORKA", unit.lower(), unit))
@@ -135,8 +170,8 @@ class PiiMasker:
         return spans
 
     def _person_spans(self, text: str, taken: List[_Span]) -> List[_Span]:
-        words = [m for m in CAP_WORD_RE.finditer(text)
-                 if m.group() not in TITLES and not any(t.start <= m.start() < t.end for t in taken)]
+        covered = _Coverage(taken)
+        words = [m for m in CAP_WORD_RE.finditer(text) if _norm(m.group()) not in TITLES and not covered.contains(m.start())]
         spans: List[_Span] = []
         i = 0
         while i < len(words):
@@ -149,7 +184,7 @@ class PiiMasker:
                     end, i = nxt.end(), i + 1
                 spans.append(_Span(w.start(), end, "OSOBA", known, self.mapping_name(known)))
                 self.detected_persons.append(DetectedPerson(text[w.start():end], True))
-            elif w.group() in HONORIFICS and nxt and not self._known_owner(nxt.group()):
+            elif _norm(w.group()) in HONORIFICS and nxt and not self._known_owner(nxt.group()):
                 # „Pana Adama Kowalika” — po zwrocie grzecznościowym imię i nazwisko albo samo nazwisko
                 after = words[i + 2] if i + 2 < len(words) and _adjacent(text, nxt, words[i + 2]) else None
                 if after and is_first_name(nxt.group()) and not self._known_owner(after.group()):
@@ -159,19 +194,30 @@ class PiiMasker:
                     spans.append(self._auto_person(text, nxt, nxt))
                     i += 1
             elif is_first_name(w.group()):
-                last = nxt if nxt and nxt.group() not in HONORIFICS and not self._known_owner(nxt.group()) else None
+                last = nxt if nxt and _norm(nxt.group()) not in HONORIFICS and not self._known_owner(nxt.group()) else None
                 spans.append(self._auto_person(text, w, last or w))
                 if last:
                     i += 1
+            elif self._after_function_word(text, w):
+                # tylko maskowanie — bez zgłaszania jako „inna osoba” (kontrola spójności zachowuje 0 fałszywych alarmów)
+                spans.append(self._auto_person(text, w, w, report=False))
             i += 1
         return spans
 
-    def _auto_person(self, text: str, first, last) -> _Span:
+    @staticmethod
+    def _after_function_word(text: str, word) -> bool:
+        if word.group().isupper() or _norm(word.group()).startswith(INSTITUTION_PREFIXES):
+            return False
+        return FUNCTION_WORD_RE.search(text[max(0, word.start() - FUNCTION_WORD_WINDOW):word.start()]) is not None
+
+    def _auto_person(self, text: str, first, last, report: bool = True) -> _Span:
         original = text[first.start():last.end()]
-        self.detected_persons.append(DetectedPerson(original, False))
-        return _Span(first.start(), last.end(), "OSOBA", "auto:" + _stem(last.group()), original)
+        if report:
+            self.detected_persons.append(DetectedPerson(original, False))
+        return _Span(first.start(), last.end(), "OSOBA", "auto:" + _stem(_norm(last.group())), original)
 
     def _known_owner(self, word: str) -> Optional[str]:
+        word = _norm(word)
         for name in self.known_names:
             parts = name.split()
             for idx, part in enumerate(parts):
@@ -198,6 +244,22 @@ class PiiMasker:
             if not result or s.start >= result[-1].end:
                 result.append(s)
         return result
+
+
+class _Coverage:
+    """Czy pozycja leży w którymś z zajętych przedziałów — wyszukiwanie binarne zamiast przeglądu wszystkich."""
+
+    def __init__(self, spans: Iterable[_Span]):
+        ordered = sorted((s.start, s.end) for s in spans)
+        self._starts = [start for start, _ in ordered]
+        self._max_end, best = [], -1
+        for _, end in ordered:
+            best = max(best, end)
+            self._max_end.append(best)
+
+    def contains(self, pos: int) -> bool:
+        idx = bisect.bisect_right(self._starts, pos) - 1
+        return idx >= 0 and pos < self._max_end[idx]
 
 
 def _adjacent(text: str, a, b) -> bool:

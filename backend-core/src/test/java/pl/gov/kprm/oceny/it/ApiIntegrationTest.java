@@ -233,6 +233,24 @@ class ApiIntegrationTest {
         mvc.perform(withUser(get("/api/hr/reports/export"), EMPLOYEE)).andExpect(status().isForbidden());
     }
 
+    @Test
+    void statsOverdueUsesSameRuleAsOverdueList() throws Exception {
+        int listed = fetch("/api/hr/overdue", HR).size();
+        JsonNode overdue = fetch("/api/stats/summary", HR).path("overdue");
+        if (overdue.path("suppressed").asBoolean()) {
+            assertThat(listed).isBetween(1, 4);
+        } else {
+            assertThat(overdue.path("value").asInt()).isEqualTo(listed);
+        }
+    }
+
+    @Test
+    void demoCycleNineJustificationMatchesK10Score() throws Exception {
+        JsonNode cycle = fetch("/api/cycles/9", HR);
+        assertThat(cycle.path("scores").path("K10").asInt()).isEqualTo(1);
+        assertThat(cycle.path("justification").asText()).contains("(K10)").doesNotContain("rzetelności");
+    }
+
     private JsonNode fetch(String path, long userId) throws Exception {
         String body = mvc.perform(withUser(get(path), userId)).andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);

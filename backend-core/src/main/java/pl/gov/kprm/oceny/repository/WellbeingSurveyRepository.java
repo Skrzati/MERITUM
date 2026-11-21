@@ -7,6 +7,4 @@ import java.util.List;
 
 public interface WellbeingSurveyRepository extends JpaRepository<WellbeingSurvey, Long> {
     List<WellbeingSurvey> findByOfficeId(Long officeId);
-
-    List<WellbeingSurvey> findByUserIdOrderBySubmittedAtAsc(Long userId);
 }

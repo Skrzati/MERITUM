@@ -16,6 +16,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 
 /** Powiadomienia wyliczane w locie dla cykli widocznych dla użytkownika (zastępują scheduler w wersji demo). */
 @Service
@@ -41,8 +42,10 @@ public class NotificationService {
     public List<Notification> forUser(User user) {
         LocalDate today = LocalDate.now(clock);
         List<Notification> result = new ArrayList<>();
-        for (EvaluationCycle c : workflow.visibleFor(user)) {
-            String who = users.findById(c.getEmployeeId()).map(User::getFullName).orElse("#" + c.getEmployeeId());
+        List<EvaluationCycle> visible = workflow.visibleFor(user);
+        Map<Long, String> names = UserNames.byId(users, visible.stream().map(EvaluationCycle::getEmployeeId).toList());
+        for (EvaluationCycle c : visible) {
+            String who = names.getOrDefault(c.getEmployeeId(), "#" + c.getEmployeeId());
             boolean awaiting = OverdueService.awaitingEvaluation(c);
             long overdue = OverdueRules.overdueDays(c.getDueDate(), today, awaiting);
             if (overdue > 0) {

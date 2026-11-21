@@ -12,7 +12,7 @@ import type { CycleView } from "./context";
 const ACTIVE = ["DRAFT_CRITERIA", "CRITERIA_CONFIRMED", "OBSERVATION", "EVALUATION_DRAFT", "AWAITING_ACK"];
 
 export function NotesTab({ view }: { view: CycleView }) {
-  const { cycle, notes, notesError, isEvaluator, refresh } = view;
+  const { cycle, notes, notesError, isEvaluator, isEmployee, refresh } = view;
   const { userName } = useUser();
   const [content, setContent] = useState("");
   const [shared, setShared] = useState(true);
@@ -77,12 +77,18 @@ export function NotesTab({ view }: { view: CycleView }) {
       </div>
 
       <div className="lg:col-span-2">
-        <HrPartnerPanel
-          cycleId={cycle.id}
-          notes={(notes ?? []).map((n) => n.content)}
-          notesCount={notes?.length ?? 0}
-          disabled={!!notesError}
-        />
+        {isEmployee ? (
+          <Alert tone="slate" title="Wirtualny HR Partner">
+            Moduł wspiera przełożonego i kadry — oceniany nie widzi analiz opartych na roboczych notatkach (decyzja D4).
+          </Alert>
+        ) : (
+          <HrPartnerPanel
+            cycleId={cycle.id}
+            notes={(notes ?? []).map((n) => n.content)}
+            notesCount={notes?.length ?? 0}
+            disabled={!!notesError}
+          />
+        )}
       </div>
     </div>
   );

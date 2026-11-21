@@ -20,9 +20,8 @@ const NAV: { href: string; label: string; roles?: Role[] }[] = [
 ];
 
 export function Header() {
-  const { users, current, switchTo, identityProvider } = useUser();
+  const { users, current, switchTo, identityProvider, loginOpen, openLogin, closeLogin, logout } = useUser();
   const pathname = usePathname();
-  const [loginOpen, setLoginOpen] = useState(false);
   const quick = ROLE_ORDER.map((role) => users.find((u) => u.role === role)).filter((u): u is User => !!u);
 
   return (
@@ -61,11 +60,20 @@ export function Header() {
             </div>
             <button
               type="button"
-              onClick={() => setLoginOpen(true)}
+              onClick={openLogin}
               className="rounded border border-gov-blue px-3 py-1.5 text-sm font-bold text-gov-blue hover:bg-gov-light focus:outline-none focus-visible:ring-2 focus-visible:ring-gov-blue"
             >
               Logowanie / SSO
             </button>
+            {current && (
+              <button
+                type="button"
+                onClick={logout}
+                className="rounded px-3 py-1.5 text-sm font-bold text-gov-text ring-1 ring-inset ring-slate-300 hover:bg-gov-section focus:outline-none focus-visible:ring-2 focus-visible:ring-gov-blue"
+              >
+                Wyloguj
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -103,7 +111,7 @@ export function Header() {
                   type="button"
                   onClick={() => void switchTo(u)}
                   aria-pressed={active}
-                  title={`${u.fullName} (${u.email})`}
+                  title={u.positionTitle ? `${u.fullName} — ${u.positionTitle}` : u.fullName}
                   className={`rounded px-2 py-0.5 font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-gov-blue ${
                     active ? "bg-gov-blue text-white" : "text-gov-blue ring-1 ring-inset ring-slate-300 hover:bg-gov-light"
                   }`}
@@ -116,7 +124,7 @@ export function Header() {
         </div>
       </div>
 
-      {loginOpen && <LoginModal onClose={() => setLoginOpen(false)} />}
+      {loginOpen && <LoginModal onClose={closeLogin} />}
     </header>
   );
 }

@@ -19,7 +19,6 @@ public class WellbeingService {
 
     public void submit(User user, int workload, int energy, int support, boolean wantsConversation) {
         WellbeingSurvey survey = new WellbeingSurvey();
-        survey.setUserId(user.getId());
         survey.setOfficeId(user.getOfficeId());
         survey.setWorkload(workload);
         survey.setEnergy(energy);

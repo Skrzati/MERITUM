@@ -2,6 +2,7 @@ package pl.gov.kprm.oceny.api;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import pl.gov.kprm.oceny.api.Dtos.*;
@@ -13,6 +14,7 @@ import pl.gov.kprm.oceny.rules.EvaluationResult;
 import pl.gov.kprm.oceny.service.CycleWorkflowService;
 import pl.gov.kprm.oceny.service.CycleWorkflowService.HrFacts;
 import pl.gov.kprm.oceny.service.IntegrationExportService;
+import pl.gov.kprm.oceny.service.Paging;
 import pl.gov.kprm.oceny.service.IntegrationExportService.EzdPackage;
 import pl.gov.kprm.oceny.service.PdfExportService;
 import pl.gov.kprm.oceny.service.RescheduleService;
@@ -33,8 +35,9 @@ public class CycleController {
     private final CycleMapper mapper;
 
     @GetMapping
-    public List<CycleDto> myCycles(@CurrentUser User user) {
-        return workflow.visibleFor(user).stream().map(mapper::toDto).toList();
+    public List<CycleDto> myCycles(@CurrentUser User user, @RequestParam(required = false) Integer page,
+                                   @RequestParam(required = false) Integer size) {
+        return workflow.visibleFor(user, Paging.of(page, size, Sort.unsorted())).stream().map(mapper::toDto).toList();
     }
 
     /** Nowy cykl — zawsze z najnowszą obowiązującą wersją schematu. */

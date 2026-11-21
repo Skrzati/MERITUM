@@ -11,11 +11,13 @@ Bez `make`: `cp infra/.env.example infra/.env && docker compose -f infra/docker-
 |---|---|
 | **Frontend (demo)** | **http://localhost:3000** |
 | backend-core API | http://localhost:8080/api/health |
-| ai-gateway (docs) | http://localhost:8000/docs |
 | Swagger UI | http://localhost:8080/swagger-ui.html |
-| Gotenberg | http://localhost:3001 |
-| PostgreSQL | localhost:5432 |
+| PostgreSQL | 127.0.0.1:5432 (tylko lokalnie) |
 
-Logowanie demo: `GET /api/auth/demo-users`, potem nagłówek `X-Demo-User-Id: <id>`.
+ai-gateway i Gotenberg nie mają portów hosta — są dostępne wyłącznie dla backend-core w sieci Dockera
+(AI tylko przez audytowane `/api/core-ai/*`).
+
+Logowanie demo: frontend loguje automatycznie (JWT z `POST /api/auth/gov-login`); w Swaggerze/curl — token z
+`gov-login` jako `Authorization: Bearer <token>` albo nagłówek `X-Demo-User-Id: <id>` (wyłączany `DEMO_HEADER_ENABLED=false`).
 
 `make down` · `make reset` (kasuje dane) · `make logs` · `make ps`

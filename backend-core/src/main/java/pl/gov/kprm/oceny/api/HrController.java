@@ -46,8 +46,10 @@ public class HrController {
     public List<UserDto> employees(@CurrentUser User user,
                                    @RequestParam(required = false) String q,
                                    @RequestParam(defaultValue = "fullName") String sort,
-                                   @RequestParam(defaultValue = "ASC") Sort.Direction dir) {
-        return hr.employees(user, q, sort, dir).stream().map(UserDto::of).toList();
+                                   @RequestParam(defaultValue = "ASC") Sort.Direction dir,
+                                   @RequestParam(required = false) Integer page,
+                                   @RequestParam(required = false) Integer size) {
+        return hr.employees(user, q, sort, dir, page, size).stream().map(UserDto::of).toList();
     }
 
     /** Zwraca aktywne cykle pracownika z przeliczonym due_date. */

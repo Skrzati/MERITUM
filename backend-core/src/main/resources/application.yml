@@ -31,3 +31,16 @@ app:
     demo-header-enabled: ${DEMO_HEADER_ENABLED:true}
   stats:
     k-anonymity: ${STATS_K_ANONYMITY:5}
+  cors:
+    # wzorce originów (allowedOriginPatterns), po przecinku
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:*}
+  rate-limit:
+    enabled: ${RATE_LIMIT_ENABLED:true}
+    window-seconds: ${RATE_LIMIT_WINDOW_SECONDS:60}
+    login-per-window: ${RATE_LIMIT_LOGIN_PER_WINDOW:30}
+    ai-per-window: ${RATE_LIMIT_AI_PER_WINDOW:60}
+    # backend stoi za proxy Next.js — adres klienta z X-Forwarded-For; false, jeśli backend jest wystawiony bezpośrednio
+    trust-forwarded-for: ${RATE_LIMIT_TRUST_FORWARDED_FOR:true}
+  ai:
+    max-request-bytes: ${AI_MAX_REQUEST_BYTES:65536}
+    audit-prompt-max-chars: ${AI_AUDIT_PROMPT_MAX_CHARS:4000}

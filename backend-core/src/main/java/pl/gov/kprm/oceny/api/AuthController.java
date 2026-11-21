@@ -3,6 +3,7 @@ package pl.gov.kprm.oceny.api;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import pl.gov.kprm.oceny.api.Dtos.DemoUserDto;
 import pl.gov.kprm.oceny.api.Dtos.LoginResponse;
 import pl.gov.kprm.oceny.api.Dtos.UserDto;
 import pl.gov.kprm.oceny.api.Requests.GovLoginRequest;
@@ -28,8 +29,8 @@ public class AuthController {
     private final AuditService audit;
 
     @GetMapping("/demo-users")
-    public List<UserDto> demoUsers() {
-        return users.findAllByOrderByIdAsc().stream().map(UserDto::of).toList();
+    public List<DemoUserDto> demoUsers() {
+        return users.findAllByOrderByIdAsc().stream().map(DemoUserDto::of).toList();
     }
 
     @PostMapping("/gov-login")

@@ -1,10 +1,12 @@
 import type { LoginResponse, Problem } from "./types";
 
-export const USER_STORAGE_KEY = "meritum.demoUserId";
+export const USER_STORAGE_KEY = "meritum.userId";
 const TOKEN_STORAGE_KEY = "meritum.accessToken";
 const IDP_STORAGE_KEY = "meritum.identityProvider";
-const USER_HEADER = "X-Demo-User-Id";
+const LOGGED_OUT_KEY = "meritum.loggedOut";
 const UNAUTHORIZED = 401;
+/** Zdarzenie okna: sesja wygasła lub token odrzucony — UI otwiera okno logowania. */
+export const AUTH_EXPIRED_EVENT = "meritum:auth-expired";
 
 export class ApiError extends Error {
   constructor(
@@ -45,14 +47,18 @@ export function identityProviderLabel(): string | null {
   return read(IDP_STORAGE_KEY);
 }
 
-/** Bearer JWT z gov-login; X-Demo-User-Id wyłącznie jako fallback, gdy tokena brak. */
+/** Wyłącznie Bearer JWT z gov-login — bez cichego przejścia na nagłówek demo. */
 function headers(extra?: HeadersInit): Headers {
   const h = new Headers(extra);
   const token = accessToken();
-  const id = currentUserId();
   if (token) h.set("Authorization", `Bearer ${token}`);
-  else if (id) h.set(USER_HEADER, id);
   return h;
+}
+
+function clearSession(): void {
+  write(TOKEN_STORAGE_KEY, null);
+  write(IDP_STORAGE_KEY, null);
+  write(USER_STORAGE_KEY, null);
 }
 
 async function toError(res: Response): Promise<ApiError> {
@@ -65,13 +71,14 @@ async function toError(res: Response): Promise<ApiError> {
   return new ApiError(res.status, problem);
 }
 
-/** Wygasły lub odrzucony token: usuwamy go i powtarzamy żądanie raz (fallback do nagłówka demo). */
+/** Wygasły lub odrzucony token: sesja jest czyszczona, a UI prosi o ponowne zalogowanie. */
 async function authorizedFetch(path: string, init: RequestInit, extraHeaders?: HeadersInit): Promise<Response> {
-  const hadToken = !!accessToken();
   const res = await fetch(path, { ...init, headers: headers(extraHeaders), cache: "no-store" });
-  if (res.status !== UNAUTHORIZED || !hadToken) return res;
-  write(TOKEN_STORAGE_KEY, null);
-  return fetch(path, { ...init, headers: headers(extraHeaders), cache: "no-store" });
+  if (res.status === UNAUTHORIZED && accessToken()) {
+    clearSession();
+    window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+  }
+  return res;
 }
 
 /** Wywołanie API przez proxy Next.js z nagłówkiem uwierzytelnienia. */
@@ -102,14 +109,18 @@ export async function govLogin(userId: number, providerLabel?: string): Promise<
   write(TOKEN_STORAGE_KEY, login.accessToken);
   write(USER_STORAGE_KEY, String(login.user.id));
   write(IDP_STORAGE_KEY, providerLabel ?? login.identityProvider);
+  write(LOGGED_OUT_KEY, null);
   return login;
 }
 
-/** Gdy logowanie się nie powiodło — bez tokena, tylko nagłówek demo (nie zostawiamy tokena poprzedniej osoby). */
-export function fallbackToDemoHeader(userId: number): void {
-  write(TOKEN_STORAGE_KEY, null);
-  write(IDP_STORAGE_KEY, null);
-  write(USER_STORAGE_KEY, String(userId));
+/** Wylogowanie: usuwa token i blokuje automatyczne logowanie demo do czasu ponownego wyboru konta. */
+export function logout(): void {
+  clearSession();
+  write(LOGGED_OUT_KEY, "1");
+}
+
+export function wasLoggedOut(): boolean {
+  return read(LOGGED_OUT_KEY) === "1";
 }
 
 /** Wywołanie AI przez backend-core (audyt AI Act art. 26). */

@@ -7,6 +7,8 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import pl.gov.kprm.oceny.domain.User;
@@ -20,8 +22,11 @@ import java.util.Optional;
  * a dla testów/Swaggera — nagłówek {@code X-Demo-User-Id} (wyłączany przez app.auth.demo-header-enabled=false).
  */
 @Component
+@Order(CurrentUserFilter.ORDER)
 public class CurrentUserFilter extends OncePerRequestFilter {
     public static final String DEMO_HEADER = "X-Demo-User-Id";
+    /** Po nagłówkach bezpieczeństwa, przed rate-limitingiem (który liczy żądania per użytkownik). */
+    public static final int ORDER = Ordered.HIGHEST_PRECEDENCE + 10;
     public static final String ATTR = CurrentUserFilter.class.getName() + ".user";
     private static final String BEARER = "Bearer ";
 

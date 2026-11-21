@@ -62,7 +62,7 @@ public class StatsService {
                 countBy(all, c -> c.getStatus().name()),
                 countBy(all, c -> c.getFinalResult() == null ? null : c.getFinalResult().name()),
                 countBy(all, c -> c.getPerformanceLevel() == null ? null : c.getPerformanceLevel().name()),
-                count(active.stream().filter(c -> c.getDueDate().isBefore(today)).count()),
+                count(all.stream().filter(c -> OverdueService.awaitingEvaluation(c) && c.getDueDate().isBefore(today)).count()),
                 count(dueWithin(active, today, UPCOMING_SHORT_DAYS)),
                 count(dueWithin(active, today, UPCOMING_LONG_DAYS)),
                 count(all.stream().filter(c -> c.getAppealedAt() != null).count()),
