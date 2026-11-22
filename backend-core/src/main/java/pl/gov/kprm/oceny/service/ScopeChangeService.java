@@ -41,7 +41,7 @@ public class ScopeChangeService {
     public ScopeChange record(Long cycleId, User user, LocalDate changeDate, String newPositionTitle,
                               String description, boolean significant) {
         EvaluationCycle cycle = workflow.load(cycleId);
-        boolean hr = user.getRole() == Role.HR && user.getOfficeId().equals(cycle.getOfficeId());
+        boolean hr = user.hasRole(Role.HR) && user.getOfficeId().equals(cycle.getOfficeId());
         if (!hr && !workflow.canActAsEvaluator(cycle, user)) {
             throw forbidden("Zmianę zakresu obowiązków rejestruje kadra lub oceniający");
         }

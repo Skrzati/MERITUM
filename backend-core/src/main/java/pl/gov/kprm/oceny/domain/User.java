@@ -40,6 +40,9 @@ public class User {
     private LocalDate employmentStartDate;
     /** Opis stanowiska pracy (art. 84 ustawy o SC) — kontekst dla podpowiedzi kryteriów. */
     private String jobDescription;
+    /** Role dodatkowe (mały urząd: kierownik łączy np. DG + EVALUATOR + HR); bez KPRM_ADMIN. */
+    @Convert(converter = RoleSetConverter.class)
+    private java.util.Set<Role> secondaryRoles = java.util.EnumSet.noneOf(Role.class);
     /** Konto lokalne (tryb Mały Urząd): skrót BCrypt; null = logowanie wyłącznie przez WK/PZ lub AD. */
     @Getter(AccessLevel.NONE)
     private String passwordHash;
@@ -47,6 +50,11 @@ public class User {
 
     public java.util.Optional<String> passwordHash() {
         return java.util.Optional.ofNullable(passwordHash);
+    }
+
+    /** Rola główna albo jedna z ról dodatkowych. */
+    public boolean hasRole(Role r) {
+        return role == r || (secondaryRoles != null && secondaryRoles.contains(r));
     }
 
     public boolean hasLocalPassword() {

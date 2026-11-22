@@ -7,7 +7,7 @@ import re
 from typing import Dict, List
 
 from .catalog import CRITERIA
-from .guardrails import clean_list, strip_score_proposals
+from .guardrails import clean_list, compliance_meta, strip_score_proposals
 from .llm import MODE_FALLBACK, MODE_MOCK, LLMClient
 from .pii import PiiMasker, unmask_pii
 
@@ -109,6 +109,7 @@ def suggest_criteria(llm: LLMClient, position_title: str, department: str, sheet
                             [:EXPECTATIONS_PER_CRITERION],
         } for s in suggestions],
         "mode": mode,
+        "complianceMeta": compliance_meta(masker.redacted_count),
     }
 
 

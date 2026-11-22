@@ -27,3 +27,37 @@ DEVELOPMENT_ACTIONS: Dict[str, List[str]] = {
     "Zarządzanie ludźmi": ["Szkolenie z udzielania informacji zwrotnej i delegowania", "Coaching menedżerski (3–5 sesji)"],
     "Zarządzanie strategiczne": ["Udział w opracowaniu strategii/planu działalności urzędu", "Program rozwojowy dla kadry kierowniczej (np. KSAP)"],
 }
+
+# Model 70-20-10 bez kosztów dla urzędu (małe urzędy): zadanie w miejscu pracy i temat szkolenia per kryterium.
+_ON_THE_JOB_TASK: Dict[str, str] = {
+    "Komunikacja": "Przygotowanie 2–3 pism do interesantów prostym językiem z omówieniem z przełożonym",
+    "Kreatywność": "Zaproponowanie i przetestowanie jednego usprawnienia procesu w komórce",
+    "Negocjowanie": "Prowadzenie wybranych uzgodnień (np. międzywydziałowych) z przygotowanym stanowiskiem",
+    "Organizacja pracy i orientacja na osiąganie celów": "Samodzielne zaplanowanie harmonogramu zadania z kamieniami milowymi",
+    "Orientacja na klienta/interesanta": "Analiza skarg i wniosków interesantów z kwartału i propozycja usprawnień",
+    "Podejmowanie decyzji i odpowiedzialność": "Samodzielne prowadzenie wybranej sprawy w granicach upoważnienia",
+    "Radzenie sobie w sytuacjach kryzysowych": "Udział w przeglądzie procedury kryzysowej komórki i ćwiczeniu „na sucho”",
+    "Rzetelność": "Opracowanie i stosowanie listy kontrolnej jakości dla kluczowych dokumentów",
+    "Myślenie analityczne": "Przygotowanie analizy wybranego problemu z danymi i rekomendacjami",
+    "Wykorzystywanie wiedzy i doskonalenie zawodowe": "Przygotowanie krótkiego przeglądu zmian przepisów dla zespołu",
+    "Współpraca": "Udział w zadaniu realizowanym wspólnie z inną komórką",
+    "Wystąpienia publiczne": "Prezentacja wyników pracy na spotkaniu zespołu lub departamentu",
+    "Zarządzanie ludźmi": "Prowadzenie wybranego zadania zespołowego z delegowaniem i informacją zwrotną",
+    "Zarządzanie strategiczne": "Udział w przygotowaniu planu działalności komórki na kolejny rok",
+}
+GENERAL_DEVELOPMENT_AREA = "Ogólne kompetencje zawodowe"
+
+
+def development_70_20_10(criterion: str) -> Dict[str, List[str]]:
+    """Propozycje IPRZ o koszcie 0 zł: 70% zadania w pracy, 20% uczenie się od innych, 10% bezpłatne formy formalne."""
+    task = _ON_THE_JOB_TASK.get(criterion, "Powierzenie nowego zadania rozwijającego wybraną kompetencję")
+    topic = criterion.lower() if criterion != GENERAL_DEVELOPMENT_AREA else "kompetencji zawodowych"
+    return {
+        "onTheJob70": [task,
+                       f"Zastępstwo na zadaniach wymagających kompetencji „{criterion}” (w uzgodnionym zakresie)",
+                       f"Shadowing — obserwacja doświadczonej osoby w zadaniach z obszaru „{criterion}”"],
+        "social20": [f"Mentoring wewnętrzny z osobą wyróżniającą się w obszarze „{criterion}”",
+                     "Wymiana doświadczeń z inną komórką lub wydziałem (spotkanie, wizyta studyjna wewnątrz urzędu)"],
+        "formal10": [f"Bezpłatny e-learning KSAP z obszaru: {topic} (sprawdź aktualną ofertę)",
+                     f"Szkolenie powszechne w służbie cywilnej z obszaru: {topic} (bez kosztów dla urzędu)"],
+    }

@@ -7,4 +7,6 @@ import java.util.List;
 
 public interface IprzItemRepository extends JpaRepository<IprzItem, Long> {
     List<IprzItem> findByCycleIdOrderByIdAsc(Long cycleId);
+
+    List<IprzItem> findByCycleIdIn(java.util.Collection<Long> cycleIds);
 }

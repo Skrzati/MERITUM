@@ -11,8 +11,9 @@ public final class Access {
     private Access() {
     }
 
+    /** Rola główna lub dodatkowa (łączenie ról w małym urzędzie, np. kierownik = DG + EVALUATOR + HR). */
     public static void requireRole(User user, Role... roles) {
-        if (Arrays.stream(roles).noneMatch(r -> r == user.getRole())) {
+        if (Arrays.stream(roles).noneMatch(user::hasRole)) {
             throw forbidden("Wymagana rola: " + Arrays.toString(roles));
         }
     }

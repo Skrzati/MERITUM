@@ -75,9 +75,24 @@ public class LocalAccountService {
         audit.log(actor, target.getOfficeId(), "PASSWORD_SET", AuditService.USER, target.getId(), Map.of());
     }
 
+    /** Łączenie ról w małym urzędzie (np. kierownik urzędu: DG + EVALUATOR + HR). */
+    public User setSecondaryRoles(User actor, Long userId, Set<Role> roles) {
+        User target = managed(actor, userId);
+        target.setSecondaryRoles(HrService.secondaryRoles(roles == null ? Set.of() : roles, target.getRole()));
+        audit.log(actor, target.getOfficeId(), "SECONDARY_ROLES_SET", AuditService.USER, target.getId(),
+                Map.of("secondaryRoles", target.getSecondaryRoles()));
+        return target;
+    }
+
     public record NewAccount(Long officeId, String firstName, String lastName, String email, Role role,
                              EmploymentStatus employmentStatus, Long supervisorId, String department,
-                             String positionTitle, String password) {
+                             String positionTitle, String password, Set<Role> secondaryRoles) {
+        public NewAccount(Long officeId, String firstName, String lastName, String email, Role role,
+                          EmploymentStatus employmentStatus, Long supervisorId, String department,
+                          String positionTitle, String password) {
+            this(officeId, firstName, lastName, email, role, employmentStatus, supervisorId, department,
+                    positionTitle, password, null);
+        }
     }
 
     public User create(User actor, NewAccount a) {
@@ -102,6 +117,9 @@ public class LocalAccountService {
         u.setEmploymentStatus(a.employmentStatus() != null ? a.employmentStatus() : EmploymentStatus.PRACOWNIK_SC_NIEOKRESLONY);
         u.setDepartment(blankToNull(a.department()));
         u.setPositionTitle(blankToNull(a.positionTitle()));
+        if (a.secondaryRoles() != null) {
+            u.setSecondaryRoles(HrService.secondaryRoles(a.secondaryRoles(), a.role()));
+        }
         if (a.supervisorId() != null) {
             User supervisor = users.findById(a.supervisorId()).orElseThrow(() -> notFound("Użytkownik", a.supervisorId()));
             if (!supervisor.getOfficeId().equals(officeId)) {
@@ -132,7 +150,7 @@ public class LocalAccountService {
     @Transactional(readOnly = true)
     public List<Office> offices(User actor) {
         requireRole(actor, Role.KPRM_ADMIN, Role.HR);
-        return actor.getRole() == Role.KPRM_ADMIN ? offices.findAll()
+        return actor.hasRole(Role.KPRM_ADMIN) ? offices.findAll()
                 : offices.findById(actor.getOfficeId()).map(List::of).orElse(List.of());
     }
 
@@ -151,7 +169,7 @@ public class LocalAccountService {
 
     private Long targetOffice(User actor, Long requested) {
         requireRole(actor, Role.KPRM_ADMIN, Role.HR);
-        if (actor.getRole() == Role.HR) {
+        if (actor.hasRole(Role.HR)) {
             if (requested != null && !requested.equals(actor.getOfficeId())) {
                 throw forbidden("Kadry zarządzają kontami wyłącznie własnego urzędu");
             }
@@ -166,7 +184,7 @@ public class LocalAccountService {
     private User managed(User actor, Long userId) {
         User target = users.findById(userId).orElseThrow(() -> notFound("Użytkownik", userId));
         targetOffice(actor, target.getOfficeId());
-        if (target.getRole() == Role.KPRM_ADMIN && actor.getRole() != Role.KPRM_ADMIN) {
+        if (target.hasRole(Role.KPRM_ADMIN) && !actor.hasRole(Role.KPRM_ADMIN)) {
             throw forbidden("Kadry nie zarządzają kontem administratora KPRM");
         }
         if (!target.isActive()) {

@@ -29,10 +29,10 @@ import java.util.Set;
 @Service
 public class AiProxyService {
     public static final Set<String> OPERATIONS = Set.of("socratic-draft", "consistency-check", "hr-partner", "interview-prep",
-            "suggest-criteria");
+            "suggest-criteria", "appreciation-nudge", "team-mentoring");
     /** Operacje wspierające przełożonego — niedostępne dla ocenianego i administratora KPRM. */
     public static final Set<String> SUPERVISOR_OPERATIONS = Set.of("socratic-draft", "hr-partner", "interview-prep",
-            "suggest-criteria");
+            "suggest-criteria", "appreciation-nudge", "team-mentoring");
     private static final Role[] SUPERVISOR_ROLES = {Role.EVALUATOR, Role.DG, Role.HR};
     static final String TRUNCATION_MARK = "…[przycięto]";
     static final String SUGGEST_CRITERIA = "suggest-criteria";

@@ -182,7 +182,7 @@ public class DevelopmentService {
 
     private EvaluationCycle asIprzEditor(Long cycleId, User user) {
         EvaluationCycle cycle = workflow.load(cycleId);
-        boolean hr = user.getRole() == Role.HR && user.getOfficeId().equals(cycle.getOfficeId());
+        boolean hr = user.hasRole(Role.HR) && user.getOfficeId().equals(cycle.getOfficeId());
         if (!hr && !user.getId().equals(cycle.getEvaluatorId()) && !workflow.canActAsEvaluator(cycle, user)) {
             throw forbidden("IPRZ ustala oceniający (lub zastępca) albo kadry");
         }

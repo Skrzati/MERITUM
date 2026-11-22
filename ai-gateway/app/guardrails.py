@@ -1,8 +1,9 @@
 """Filtry bezpieczeństwa dla treści generowanych przez AI."""
 import re
-from typing import List
+from typing import Dict, List
 
 AI_DISCLAIMER = "Wygenerowane przez AI — wymaga weryfikacji i akceptacji przełożonego (AI Act art. 50)"
+COMPLIANCE_DISCLAIMER = "Szkic asystenta — decyzję i ostateczną ocenę podejmuje wyłącznie przełożony."
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 _SCORE_PROPOSAL_RES = [
@@ -40,3 +41,9 @@ def strip_medical_content(text: str) -> str:
 
 def clean_list(items: List[str], cleaner) -> List[str]:
     return [c for c in (cleaner(str(i)) for i in items) if c]
+
+
+def compliance_meta(redacted_count: int) -> Dict:
+    """AI Act, zał. III pkt 4 (HR — system wysokiego ryzyka): treść doradcza, decyzja człowieka, PII zanonimizowane."""
+    return {"piiAnonymized": True, "redactedCount": redacted_count, "humanInTheLoopRequired": True,
+            "advisoryOnly": True, "disclaimer": COMPLIANCE_DISCLAIMER}

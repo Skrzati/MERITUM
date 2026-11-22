@@ -51,6 +51,7 @@ public class HrService {
     private final EvaluationHistoryService historyService;
     private final Clock clock;
     private final org.springframework.context.ApplicationEventPublisher events;
+    private final EmployeePrivateNoteRepository privateNotes;
 
     public record ImportResult(int imported, List<String> skipped, List<String> errors) {
     }
@@ -126,12 +127,12 @@ public class HrService {
                                  Boolean civilServant, EmploymentStatus employmentStatus, Integer civilServiceGrade,
                                  Integer appointmentYear,
                                  LocalDate lastGradeDate, Long supervisorId, String jobDescription,
-                                 LocalDate employmentStartDate) {
+                                 LocalDate employmentStartDate, Set<Role> secondaryRoles) {
         public EmployeeUpdate(String firstName, String lastName, String department, String positionTitle, Role role,
                               Boolean civilServant, EmploymentStatus employmentStatus, Integer civilServiceGrade,
                               Integer appointmentYear, LocalDate lastGradeDate, Long supervisorId) {
             this(firstName, lastName, department, positionTitle, role, civilServant, employmentStatus,
-                    civilServiceGrade, appointmentYear, lastGradeDate, supervisorId, null, null);
+                    civilServiceGrade, appointmentYear, lastGradeDate, supervisorId, null, null, null);
         }
     }
 
@@ -174,6 +175,10 @@ public class HrService {
         }
         set(changed, "employmentStartDate", e.getEmploymentStartDate(), u.employmentStartDate(),
                 e::setEmploymentStartDate);
+        if (u.secondaryRoles() != null) {
+            set(changed, "secondaryRoles", e.getSecondaryRoles(), secondaryRoles(u.secondaryRoles(), e.getRole()),
+                    e::setSecondaryRoles);
+        }
         if (changed.contains("firstName") || changed.contains("lastName")) {
             String full = ((e.getFirstName() == null ? "" : e.getFirstName()) + " "
                     + (e.getLastName() == null ? "" : e.getLastName())).trim();
@@ -212,6 +217,7 @@ public class HrService {
             throw conflict("Pracownik jest przełożonym — najpierw zmień podległość jego podwładnych");
         }
         absences.deleteAll(absences.findByUserIdOrderByStartDateAsc(e.getId()));
+        privateNotes.deleteByOwnerId(e.getId()); // prywatny dziennik — dane osobowe, nie dokumentacja
         if (!users.isReferenced(e.getId())) {
             users.delete(e);
             audit.log(hr, hr.getOfficeId(), "EMPLOYEE_DELETED", AuditService.USER, employeeId, Map.of());
@@ -382,6 +388,16 @@ public class HrService {
             user.setSupervisorId(supervisor.getId());
         }
         return user;
+    }
+
+    /** Łączenie ról (mały urząd): bez KPRM_ADMIN, bez dublowania roli głównej. */
+    static Set<Role> secondaryRoles(Set<Role> requested, Role primary) {
+        if (requested.contains(Role.KPRM_ADMIN)) {
+            throw forbidden("Roli administratora KPRM nie można nadać jako roli dodatkowej");
+        }
+        Set<Role> roles = requested.isEmpty() ? EnumSet.noneOf(Role.class) : EnumSet.copyOf(requested);
+        roles.remove(primary);
+        return roles;
     }
 
     /** Kolumna 4: nazwa statusu (np. PRACOWNIK_SC_OKRESLONY) albo dawna flaga true/tak = urzędnik SC. */

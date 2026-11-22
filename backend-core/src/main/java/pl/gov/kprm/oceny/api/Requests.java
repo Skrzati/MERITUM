@@ -53,7 +53,8 @@ public final class Requests {
                                         Role role, Boolean civilServant, EmploymentStatus employmentStatus,
                                         Integer civilServiceGrade,
                                         Integer appointmentYear, LocalDate lastGradeDate, Long supervisorId,
-                                        @Size(max = 10000) String jobDescription, LocalDate employmentStartDate) {
+                                        @Size(max = 10000) String jobDescription, LocalDate employmentStartDate,
+                                        java.util.Set<Role> secondaryRoles) {
     }
 
     public record HistoryRequest(@NotNull EvaluationOutcome outcome, @NotNull PerformanceLevel level,
@@ -92,7 +93,9 @@ public final class Requests {
     }
 
     /** interviewDate — data rozmowy rozpoczynającej (§ 5 ust. 1); domyślnie dziś. */
-    public record SetCriteriaRequest(@NotNull List<CriterionInput> additional, LocalDate interviewDate) {
+    /** expectations — kod kryterium → ustalone oczekiwania na poziomie 5 pkt (§ 5 ust. 1 pkt 3); opcjonalne. */
+    public record SetCriteriaRequest(@NotNull List<CriterionInput> additional, LocalDate interviewDate,
+                                     Map<String, @Size(max = 2000) String> expectations) {
     }
 
     public record NoteRequest(@NotBlank String content, boolean isSharedAfterEval) {
@@ -108,7 +111,9 @@ public final class Requests {
                                   PreviousEvaluationInput previousEvaluation) {
     }
 
-    public record AcknowledgeRequest(SignatureMethod signatureMethod) {
+    /** paperSignedOn wymagane w trybie HYBRID_PAPER_SCAN (także dawne PAPER_HYBRID), scanReference opcjonalne. */
+    public record AcknowledgeRequest(SignatureMethod signatureMethod, LocalDate paperSignedOn,
+                                     @Size(max = 255) String scanReference) {
     }
 
     public record RefusalRequest(@NotBlank String reason, @NotNull LocalDate date) {
@@ -148,6 +153,9 @@ public final class Requests {
     public record LocalLoginRequest(@NotBlank @Size(max = 255) String login, @NotBlank @Size(max = 128) String password) {
     }
 
+    public record SecondaryRolesRequest(java.util.Set<Role> secondaryRoles) {
+    }
+
     public record SetPasswordRequest(@NotBlank @Size(max = 128) String password) {
     }
 
@@ -157,7 +165,10 @@ public final class Requests {
                                        @NotBlank @Size(max = 255) String email, @NotNull Role role,
                                        EmploymentStatus employmentStatus, Long supervisorId,
                                        @Size(max = 255) String department, @Size(max = 255) String positionTitle,
-                                       @Size(max = 128) String password) {
+                                       @Size(max = 128) String password, java.util.Set<Role> secondaryRoles) {
+    }
+
+    public record PrivateNoteRequest(Long cycleId, @NotBlank @Size(max = 10000) String content) {
     }
 
     public record SurveyQuestionRequest(@NotBlank @Size(max = 500) String text) {

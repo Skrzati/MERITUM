@@ -5,6 +5,7 @@ by wykrywane były błędy celowo umieszczone w przykładach, bez fałszywych al
 """
 import re
 from dataclasses import dataclass
+from datetime import date, timedelta
 from typing import Iterable, List, Optional
 
 from .catalog import CRITERIA_NAMES
@@ -52,6 +53,11 @@ NON_PERSON_SUFFIXES = ("ość", "cja", "cji", "nie")
 SUBJECT_WINDOW_WORDS = 5
 _WORD_RE = re.compile(r"\w+")
 
+RECENCY_WINDOW_DAYS = 90
+RECENCY_SHARE_THRESHOLD = 0.75
+# przy 1–2 notatkach rozkład w czasie nic nie mówi — ostrzeżenie byłoby szumem
+MIN_NOTES_FOR_RECENCY = 3
+
 
 @dataclass
 class Finding:
@@ -78,7 +84,8 @@ def normalize_gender(gender: Optional[str]) -> Optional[str]:
 
 def check(employee_name: str, employee_gender: Optional[str], criteria_part1: List[str], criteria_part2: List[str],
           average_score: float, level: Optional[str], justification: str,
-          grade_request_text: Optional[str]) -> List[Finding]:
+          grade_request_text: Optional[str], note_dates: Optional[List[date]] = None,
+          period_end: Optional[date] = None, recent_scope_change: bool = False) -> List[Finding]:
     texts = [t for t in (justification or "", grade_request_text or "") if t.strip()]
     criteria = {_norm(c) for c in [*CRITERIA_NAMES, *criteria_part1, *criteria_part2]}
     return (_criteria_mismatch(criteria_part1, criteria_part2)
@@ -86,7 +93,9 @@ def check(employee_name: str, employee_gender: Optional[str], criteria_part1: Li
             + _level_mismatch(average_score, level, texts, criteria)
             + _average_mismatch(average_score, texts)
             + _duplicates(justification or "", grade_request_text or "")
-            + _gender_mismatch(employee_gender, texts))
+            + _gender_mismatch(employee_gender, texts)
+            + _recency_bias(note_dates or [], period_end)
+            + _scope_change_context(recent_scope_change))
 
 
 def _norm(s: str) -> str:
@@ -216,3 +225,27 @@ def _gender_mismatch(gender: Optional[str], texts: List[str]) -> List[Finding]:
         return []
     return [Finding("GENDER_MISMATCH", WARNING,
                     f"Forma gramatyczna niezgodna z płcią ({who}): " + ", ".join(wrong[:8]))]
+
+
+def _recency_bias(note_dates: List[date], period_end: Optional[date]) -> List[Finding]:
+    """Efekt świeżości: ponad 75% notatek z ostatnich 90 dni okresu oceny (koniec okresu albo najpóźniejsza notatka)."""
+    if len(note_dates) < MIN_NOTES_FOR_RECENCY:
+        return []
+    end = period_end or max(note_dates)
+    window_start = end - timedelta(days=RECENCY_WINDOW_DAYS)
+    recent = sum(1 for d in note_dates if window_start < d <= end)
+    share = recent / len(note_dates)
+    if share <= RECENCY_SHARE_THRESHOLD:
+        return []
+    return [Finding("RECENCY_BIAS", WARNING,
+                    f"{round(share * 100)}% notatek ({recent} z {len(note_dates)}) pochodzi z ostatnich "
+                    f"{RECENCY_WINDOW_DAYS} dni okresu oceny — ryzyko oceniania wyłącznie ostatnich zdarzeń (efekt "
+                    "świeżości). Uzupełnij uzasadnienie o fakty z całego okresu oceny.")]
+
+
+def _scope_change_context(recent_scope_change: bool) -> List[Finding]:
+    if not recent_scope_change:
+        return []
+    return [Finding("RECENT_SCOPE_CHANGE", WARNING,
+                    "W ostatnich 6 miesiącach zmienił się zakres obowiązków — uwzględnij w ocenie okres wdrożenia "
+                    "w nowe zadania i oceniaj je względem oczekiwań ustalonych po zmianie (§ 9).")]

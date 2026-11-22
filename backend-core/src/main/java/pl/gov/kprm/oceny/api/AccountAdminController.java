@@ -9,6 +9,7 @@ import org.springframework.web.multipart.MultipartFile;
 import pl.gov.kprm.oceny.api.Dtos.AccountDto;
 import pl.gov.kprm.oceny.api.Dtos.OfficeDto;
 import pl.gov.kprm.oceny.api.Requests.CreateAccountRequest;
+import pl.gov.kprm.oceny.api.Requests.SecondaryRolesRequest;
 import pl.gov.kprm.oceny.api.Requests.SetPasswordRequest;
 import pl.gov.kprm.oceny.auth.CurrentUser;
 import pl.gov.kprm.oceny.domain.User;
@@ -47,7 +48,13 @@ public class AccountAdminController {
     public AccountDto create(@CurrentUser User user, @Valid @RequestBody CreateAccountRequest req) {
         return AccountDto.of(accounts.create(user, new NewAccount(req.officeId(), req.firstName(), req.lastName(),
                 req.email(), req.role(), req.employmentStatus(), req.supervisorId(), req.department(),
-                req.positionTitle(), req.password())));
+                req.positionTitle(), req.password(), req.secondaryRoles())));
+    }
+
+    @PatchMapping("/accounts/{id}/roles")
+    public AccountDto setSecondaryRoles(@CurrentUser User user, @PathVariable Long id,
+                                        @RequestBody SecondaryRolesRequest req) {
+        return AccountDto.of(accounts.setSecondaryRoles(user, id, req.secondaryRoles()));
     }
 
     @PostMapping("/accounts/{id}/password")

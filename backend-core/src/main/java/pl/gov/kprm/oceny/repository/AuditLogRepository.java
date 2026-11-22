@@ -14,4 +14,8 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
     List<AuditLog> findByOfficeIdOrderByCreatedAtDescIdDesc(Long officeId, Pageable page);
 
     List<AuditLog> findAllByOrderByCreatedAtDescIdDesc(Pageable page);
+
+    long countByOfficeIdAndActionAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(Long officeId, String action,
+                                                                                java.time.OffsetDateTime from,
+                                                                                java.time.OffsetDateTime to);
 }

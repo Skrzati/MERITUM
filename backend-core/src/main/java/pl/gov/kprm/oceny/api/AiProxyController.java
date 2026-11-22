@@ -7,7 +7,10 @@ import pl.gov.kprm.oceny.auth.CurrentUser;
 import pl.gov.kprm.oceny.domain.User;
 import pl.gov.kprm.oceny.service.AiProxyService;
 
-/** /api/core-ai/{socratic-draft|consistency-check|hr-partner|interview-prep} — wywołanie AI z audytem (AI Act art. 26). */
+/**
+ * /api/core-ai/{socratic-draft|consistency-check|hr-partner|interview-prep|suggest-criteria|appreciation-nudge|
+ * team-mentoring} — wywołanie AI z audytem (AI Act art. 26).
+ */
 @RestController
 @RequestMapping("/api/core-ai")
 @RequiredArgsConstructor

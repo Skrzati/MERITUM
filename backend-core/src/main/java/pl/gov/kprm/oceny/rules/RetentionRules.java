@@ -16,7 +16,7 @@ public final class RetentionRules {
     public static final String PERSONNEL_FILE_PART = "B";
     /** Dane pomocnicze — nie są dokumentacją pracowniczą i nie trafiają do archiwum. */
     public static final List<String> EXCLUDED_FROM_ARCHIVE = List.of("EmployeeNote", "PreInterviewSurvey",
-            "EmployeeSelfPrep");
+            "EmployeeSelfPrep", "EmployeePrivateNote");
     public static final String EXCLUSION_REASON = "Dane pomocnicze (notatki robocze przełożonego, ankiety "
             + "przygotowawcze) nie stanowią dokumentacji pracowniczej — wyłączone z akt (zakaz „czarnych teczek”, "
             + "orzecznictwo SN) i czyszczone po zamknięciu cyklu";

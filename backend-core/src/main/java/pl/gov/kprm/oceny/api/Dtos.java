@@ -40,13 +40,13 @@ public final class Dtos {
                           Role role, boolean civilServant, EmploymentStatus employmentStatus, Long supervisorId,
                           String department, String positionTitle,
                           Integer appointmentYear, Integer civilServiceGrade, LocalDate lastGradeDate, boolean active,
-                          String jobDescription, LocalDate employmentStartDate) {
+                          String jobDescription, LocalDate employmentStartDate, java.util.Set<Role> secondaryRoles) {
         public static UserDto of(User u) {
             return new UserDto(u.getId(), u.getOfficeId(), u.getFullName(), u.getFirstName(), u.getLastName(),
                     u.getEmail(), u.getRole(), u.isCivilServant(), u.getEmploymentStatus(), u.getSupervisorId(),
                     u.getDepartment(),
                     u.getPositionTitle(), u.getAppointmentYear(), u.getCivilServiceGrade(), u.getLastGradeDate(),
-                    u.isActive(), u.getJobDescription(), u.getEmploymentStartDate());
+                    u.isActive(), u.getJobDescription(), u.getEmploymentStartDate(), u.getSecondaryRoles());
         }
     }
 
@@ -60,6 +60,13 @@ public final class Dtos {
     public record OfficeDto(Long id, String name, String city, boolean hasDgRole, boolean localAuthEnabled) {
         public static OfficeDto of(Office o) {
             return new OfficeDto(o.getId(), o.getName(), o.getCity(), o.isHasDgRole(), o.isLocalAuthEnabled());
+        }
+    }
+
+    public record PrivateNoteDto(Long id, Long cycleId, String content, OffsetDateTime createdAt,
+                                 OffsetDateTime updatedAt) {
+        public static PrivateNoteDto of(EmployeePrivateNote n) {
+            return new PrivateNoteDto(n.getId(), n.getCycleId(), n.getContent(), n.getCreatedAt(), n.getUpdatedAt());
         }
     }
 
@@ -118,7 +125,9 @@ public final class Dtos {
                            PreviousEvaluation previousEvaluation, EvaluationCycle.IprzStatus iprzStatus,
                            Long iprzApprovedBy, OffsetDateTime iprzApprovedAt, OffsetDateTime iprzEmployeeAckAt,
                            boolean legalHold, LocalDate courtAppealFiledOn, String courtCaseReference,
-                           int appealRound, boolean appealAllowed, OffsetDateTime workingNotesPurgedAt) {
+                           int appealRound, boolean appealAllowed, OffsetDateTime workingNotesPurgedAt,
+                           JsonNode criteriaExpectations, String signatureHash, String signatureVerificationCode,
+                           OffsetDateTime signedAt, LocalDate paperSignedOn, String scanReference) {
         /** Pola wyliczane: terminy, art. 89 ust. 2, opóźnienie, organ rozpatrujący sprzeciw, poprzednia ocena. */
         public record Facts(LocalDate criteriaDeadline, boolean gradeEligible, LocalDate gradeDeadline, long overdueDays,
                             boolean officeHasDgRole, PreviousEvaluation previousEvaluation) {
@@ -140,7 +149,8 @@ public final class Dtos {
                     c.getIprzApprovedBy(), c.getIprzApprovedAt(), c.getIprzEmployeeAckAt(), c.isLegalHold(),
                     c.getCourtAppealFiledOn(), c.getCourtCaseReference(), c.getAppealRound(),
                     c.getStatus() == CycleStatus.COMPLETED && c.getDgDecision() != DgDecision.CHANGE,
-                    c.getWorkingNotesPurgedAt());
+                    c.getWorkingNotesPurgedAt(), c.getCriteriaExpectationsJson(), c.getSignatureHash(),
+                    c.getSignatureVerificationCode(), c.getSignedAt(), c.getPaperSignedOn(), c.getScanReference());
         }
 
         public static CycleDto of(EvaluationCycle c) {

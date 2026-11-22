@@ -158,7 +158,7 @@ public class CycleController {
                                 @Valid @RequestBody SetCriteriaRequest req) {
         List<Criterion> additional = req.additional().stream()
                 .map(c -> new Criterion(c.code(), c.name(), false)).toList();
-        return mapper.toDto(workflow.setCriteria(id, user, additional, req.interviewDate()));
+        return mapper.toDto(workflow.setCriteria(id, user, additional, req.interviewDate(), req.expectations()));
     }
 
     @PostMapping("/{id}/confirm-criteria")
@@ -189,7 +189,8 @@ public class CycleController {
     @PostMapping("/{id}/acknowledge")
     public CycleDto acknowledge(@PathVariable Long id, @CurrentUser User user,
                                 @RequestBody(required = false) AcknowledgeRequest req) {
-        return mapper.toDto(workflow.acknowledge(id, user, req == null ? null : req.signatureMethod()));
+        return mapper.toDto(req == null ? workflow.acknowledge(id, user, null)
+                : workflow.acknowledge(id, user, req.signatureMethod(), req.paperSignedOn(), req.scanReference()));
     }
 
     /** Kolejny cykl po zakończonej ocenie: po negatywnej ponowna ocena (6 mies.), po pozytywnej zwykły cykl. */

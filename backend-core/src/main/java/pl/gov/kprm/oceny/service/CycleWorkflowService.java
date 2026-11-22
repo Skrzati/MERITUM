@@ -59,7 +59,7 @@ public class CycleWorkflowService {
             int from = (int) Math.min(p.getOffset(), all.size());
             return all.subList(from, Math.min(from + p.getPageSize(), all.size()));
         }
-        return switch (user.getRole()) {
+        return switch (visibilityRole(user)) {
             case KPRM_ADMIN -> cycles.findAllByOrderByIdAsc(p);
             case HR, DG -> cycles.findByOfficeIdOrderByIdAsc(user.getOfficeId(), p);
             case EVALUATOR, EVALUATED -> cycles.findByEmployeeIdOrEvaluatorIdOrderByIdAsc(user.getId(), user.getId(), p);
@@ -68,7 +68,7 @@ public class CycleWorkflowService {
 
     @Transactional(readOnly = true)
     public List<EvaluationCycle> visibleFor(User user) {
-        List<EvaluationCycle> own = switch (user.getRole()) {
+        List<EvaluationCycle> own = switch (visibilityRole(user)) {
             case KPRM_ADMIN -> cycles.findAllByOrderByIdAsc();
             case HR, DG -> cycles.findByOfficeIdOrderByIdAsc(user.getOfficeId());
             case EVALUATOR, EVALUATED -> cycles.findByEmployeeIdOrEvaluatorIdOrderByIdAsc(user.getId(), user.getId());
@@ -84,6 +84,14 @@ public class CycleWorkflowService {
                 .filter(c -> c.getStatus().isActive())
                 .forEach(c -> merged.putIfAbsent(c.getId(), c));
         return new ArrayList<>(merged.values());
+    }
+
+    /** Najszerszy zakres widoczności z ról głównej i dodatkowych (np. kierownik małego urzędu z rolą HR). */
+    private static Role visibilityRole(User user) {
+        if (user.hasRole(Role.KPRM_ADMIN)) return Role.KPRM_ADMIN;
+        if (user.hasRole(Role.HR)) return Role.HR;
+        if (user.hasRole(Role.DG)) return Role.DG;
+        return user.getRole();
     }
 
     /** Oceniający albo jego aktywny zastępca (tylko dla aktywnych cykli). */
@@ -109,9 +117,9 @@ public class CycleWorkflowService {
     @Transactional(readOnly = true)
     public EvaluationCycle get(Long id, User user) {
         EvaluationCycle cycle = load(id);
-        boolean officeStaff = (user.getRole() == Role.HR || user.getRole() == Role.DG)
+        boolean officeStaff = (user.hasRole(Role.HR) || user.hasRole(Role.DG))
                 && user.getOfficeId().equals(cycle.getOfficeId());
-        if (!isParty(cycle, user) && !officeStaff && user.getRole() != Role.KPRM_ADMIN && !isDeputy(cycle, user)) {
+        if (!isParty(cycle, user) && !officeStaff && !user.hasRole(Role.KPRM_ADMIN) && !isDeputy(cycle, user)) {
             throw forbidden("Brak dostępu do cyklu " + id);
         }
         return cycle;
@@ -133,7 +141,7 @@ public class CycleWorkflowService {
                                   Long evaluatorId, String place) {
         User employee = users.findById(employeeId).orElseThrow(() -> notFound("Użytkownik", employeeId));
         requireSameOffice(user, employee.getOfficeId());
-        boolean officeStaff = user.getRole() == Role.HR || user.getRole() == Role.DG;
+        boolean officeStaff = user.hasRole(Role.HR) || user.hasRole(Role.DG);
         boolean supervisor = user.getId().equals(employee.getSupervisorId());
         if (!officeStaff && !supervisor) {
             throw forbidden("Cykl tworzy kadra, kierownictwo urzędu lub bezpośredni przełożony ocenianego");
@@ -264,7 +272,7 @@ public class CycleWorkflowService {
     public EvaluationCycle updateDetails(Long id, User user, String place, LocalDate startDate, LocalDate dueDate,
                                          String reason) {
         EvaluationCycle cycle = load(id);
-        boolean hr = user.getRole() == Role.HR && user.getOfficeId().equals(cycle.getOfficeId());
+        boolean hr = user.hasRole(Role.HR) && user.getOfficeId().equals(cycle.getOfficeId());
         if (!hr && !canActAsEvaluator(cycle, user)) {
             throw forbidden("Dane formularza zmienia oceniający lub kadry");
         }
@@ -302,7 +310,7 @@ public class CycleWorkflowService {
      */
     public EvaluationCycle adminCorrection(Long id, User user, CycleStatus target, String reason, CorrectionFields f) {
         EvaluationCycle cycle = load(id);
-        if (user.getRole() != Role.KPRM_ADMIN) {
+        if (!user.hasRole(Role.KPRM_ADMIN)) {
             requireRole(user, Role.HR, Role.DG);
             requireSameOffice(user, cycle.getOfficeId());
         }
@@ -388,7 +396,7 @@ public class CycleWorkflowService {
     private void requireEvaluatorFor(User employee, Long evaluatorId) {
         User evaluator = users.findById(evaluatorId).orElseThrow(() -> notFound("Użytkownik", evaluatorId));
         if (!evaluator.getOfficeId().equals(employee.getOfficeId()) || !evaluator.isActive()
-                || (evaluator.getRole() != Role.EVALUATOR && evaluator.getRole() != Role.DG)
+                || (!evaluator.hasRole(Role.EVALUATOR) && !evaluator.hasRole(Role.DG))
                 || evaluator.getId().equals(employee.getId())) {
             throw conflict("Oceniający musi być aktywnym przełożonym (EVALUATOR lub DG) z tego samego urzędu");
         }
@@ -398,7 +406,7 @@ public class CycleWorkflowService {
     public EvaluationCycle next(Long id, User user) {
         EvaluationCycle previous = load(id);
         requireStatus(previous, CycleStatus.COMPLETED);
-        boolean hr = user.getRole() == Role.HR && user.getOfficeId().equals(previous.getOfficeId());
+        boolean hr = user.hasRole(Role.HR) && user.getOfficeId().equals(previous.getOfficeId());
         if (!hr && !user.getId().equals(previous.getEvaluatorId())) {
             throw forbidden("Kolejny cykl uruchamia kadra lub oceniający");
         }
@@ -413,17 +421,38 @@ public class CycleWorkflowService {
     }
 
     public EvaluationCycle setCriteria(Long id, User user, List<Criterion> requested, LocalDate interviewDate) {
+        return setCriteria(id, user, requested, interviewDate, null);
+    }
+
+    /** @param expectations kod kryterium → ustalone oczekiwania (zachowania na poziomie 5 pkt), § 5 ust. 1 pkt 3 */
+    public EvaluationCycle setCriteria(Long id, User user, List<Criterion> requested, LocalDate interviewDate,
+                                       Map<String, String> expectations) {
         EvaluationCycle cycle = asEvaluator(id, user);
         requireStatus(cycle, CycleStatus.DRAFT_CRITERIA);
         SchemaVersion schema = schemas.findById(cycle.getSchemaVersionId())
                 .orElseThrow(() -> notFound("Schemat", cycle.getSchemaVersionId()));
         List<Criterion> all = CriteriaCatalog.from(schema.getConfigJson()).select(cycle.getSheetType(), requested);
         cycle.setCriteriaJson(json.valueToTree(all));
+        cycle.setCriteriaExpectationsJson(expectations == null ? null : json.valueToTree(expectationsFor(all, expectations)));
         cycle.setCriteriaInterviewDate(interviewDate != null ? interviewDate : LocalDate.now(clock));
         audit.log(user, cycle.getOfficeId(), "CRITERIA_SET", AuditService.CYCLE, cycle.getId(),
                 auditPayload(user, cycle, Map.of("criteria", all.stream().map(Criterion::code).toList(),
                         "interviewDate", cycle.getCriteriaInterviewDate())));
         return cycle;
+    }
+
+    private static Map<String, String> expectationsFor(List<Criterion> criteria, Map<String, String> expectations) {
+        Set<String> codes = new HashSet<>();
+        criteria.forEach(c -> codes.add(c.code()));
+        List<String> unknown = expectations.keySet().stream().filter(k -> !codes.contains(k)).sorted().toList();
+        if (!unknown.isEmpty()) {
+            throw new RuleViolationException(List.of("Oczekiwania dla kryteriów spoza arkusza: " + unknown));
+        }
+        Map<String, String> clean = new TreeMap<>();
+        expectations.forEach((k, v) -> {
+            if (v != null && !v.isBlank()) clean.put(k, v.trim());
+        });
+        return clean;
     }
 
     public EvaluationCycle confirmCriteria(Long id, User user) {
@@ -524,13 +553,41 @@ public class CycleWorkflowService {
     }
 
     public EvaluationCycle acknowledge(Long id, User user, SignatureMethod signatureMethod) {
+        return acknowledge(id, user, signatureMethod, null, null);
+    }
+
+    /**
+     * Zapoznanie z podpisem w jednym z trzech trybów ({@link SignatureMethod#mode()}): kwalifikowany / zaufany,
+     * pieczęć wewnętrzna (SHA-256 + znacznik czasu w audycie) albo wydruk hybrydowy (data podpisu odręcznego,
+     * opcjonalnie referencja skanu; kod weryfikacyjny z wydruku).
+     */
+    public EvaluationCycle acknowledge(Long id, User user, SignatureMethod signatureMethod, LocalDate paperSignedOn,
+                                       String scanReference) {
         EvaluationCycle cycle = asEmployee(id, user);
         LocalDate today = LocalDate.now(clock);
+        SignatureMethod method = signatureMethod != null ? signatureMethod : SignatureMethod.SYSTEM_DEMO;
+        if (method.mode() == SignatureMethod.HYBRID_PAPER_SCAN) {
+            if (paperSignedOn == null || paperSignedOn.isAfter(today)) {
+                throw new RuleViolationException(List.of("Tryb hybrydowy wymaga daty podpisu odręcznego (nie z przyszłości)"));
+            }
+            cycle.setPaperSignedOn(paperSignedOn);
+            cycle.setScanReference(scanReference == null || scanReference.isBlank() ? null : scanReference.trim());
+        }
         cycle.setAcknowledgedAt(today);
         cycle.setAppealDeadline(deadlines.appealDeadline(today, rulesOf(cycle)));
-        cycle.setSignatureMethod(signatureMethod != null ? signatureMethod : SignatureMethod.SYSTEM_DEMO);
-        transition(cycle, user, CycleStatus.COMPLETED, "EVALUATION_ACKNOWLEDGED",
-                Map.of("appealDeadline", cycle.getAppealDeadline(), "signatureMethod", cycle.getSignatureMethod()));
+        cycle.setSignatureMethod(method);
+        String hash = SignatureStamp.fingerprint(cycle);
+        cycle.setSignatureHash(hash);
+        cycle.setSignatureVerificationCode(SignatureStamp.verificationCode(hash));
+        cycle.setSignedAt(OffsetDateTime.now(clock));
+        Map<String, Object> p = payload("appealDeadline", cycle.getAppealDeadline(), "signatureMethod", method,
+                "signatureMode", method.mode(), "sha256", hash, "signedAt", cycle.getSignedAt());
+        if (method.mode() == SignatureMethod.HYBRID_PAPER_SCAN) {
+            p.put("paperSignedOn", paperSignedOn);
+            p.put("scanReference", cycle.getScanReference());
+            p.put("verificationCode", cycle.getSignatureVerificationCode());
+        }
+        transition(cycle, user, CycleStatus.COMPLETED, "EVALUATION_ACKNOWLEDGED", p);
         history.recordCompleted(cycle);
         events.publishEvent(new CycleEvents.CycleClosed(cycle.getId()));
         return cycle;
@@ -539,7 +596,7 @@ public class CycleWorkflowService {
     /** Fikcja zapoznania: odmowa podpisu jest odnotowywana, a termin na sprzeciw biegnie od wskazanej daty. */
     public EvaluationCycle registerRefusal(Long id, User user, String reason, LocalDate date) {
         EvaluationCycle cycle = load(id);
-        boolean hr = user.getRole() == Role.HR && user.getOfficeId().equals(cycle.getOfficeId());
+        boolean hr = user.hasRole(Role.HR) && user.getOfficeId().equals(cycle.getOfficeId());
         if (!canActAsEvaluator(cycle, user) && !hr) {
             throw forbidden("Odmowę zapoznania rejestruje oceniający lub kadry");
         }
@@ -686,7 +743,7 @@ public class CycleWorkflowService {
     public HrFacts hrFacts(Long id, User user) {
         EvaluationCycle cycle = get(id, user);
         // D4: oceniany nie widzi metadanych roboczych notatek przełożonego (liczba, data ostatniej)
-        if (user.getRole() == Role.EVALUATED || user.getId().equals(cycle.getEmployeeId())) {
+        if (user.hasRole(Role.EVALUATED) || user.getId().equals(cycle.getEmployeeId())) {
             throw forbidden("Fakty dla HR Partnera są dostępne dla przełożonego i kadr, nie dla ocenianego");
         }
         LocalDate today = LocalDate.now(clock);
@@ -805,7 +862,7 @@ public class CycleWorkflowService {
     }
 
     private static SheetType defaultSheet(User employee) {
-        return employee.getRole() == Role.EVALUATOR || employee.getRole() == Role.DG ? SheetType.B : SheetType.C;
+        return employee.hasRole(Role.EVALUATOR) || employee.hasRole(Role.DG) ? SheetType.B : SheetType.C;
     }
 
     private static boolean isParty(EvaluationCycle cycle, User user) {

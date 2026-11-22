@@ -29,7 +29,8 @@
 │       │   │                 #   OverdueRules (dni po terminie + eskalacja), NextCycleRules (kolejny cykl),
 │       │   │                 #   HrFactsRules (dni nieobecności w okresie, sygnały przeciążenia w notatkach),
 │       │   │                 #   CheckinRules (przypomnienie kwartalne 90/120 dni), AppealAuthority (DG albo kierownik urzędu),
-│       │   │                 #   EmploymentAlertRules (art. 71 ust. 1 pkt 1 / art. 89 ust. 2), RetentionRules (część B akt, 10/50 lat)
+│       │   │                 #   EmploymentAlertRules (art. 71 ust. 1 pkt 1 / art. 89 ust. 2), RetentionRules (część B akt, 10/50 lat),
+│       │   │                 #   SignatureStamp (SHA-256 treści arkusza + kod weryfikacyjny wydruku)
 │       │   ├── service/      # CycleWorkflowService, EvaluationHistoryService, RescheduleService, ScopeChangeService,
 │       │   │                 #   WellbeingService, HrService, SchemaAdminService, StatsService, PdfExportService,
 │       │   │                 #   AiProxyService (audyt AI), OverdueService, NotificationService, AuditService, Access,
@@ -37,7 +38,9 @@
 │       │   │                 #   (zastępstwa), Paging (opcjonalne page/size), UserNames (imiona zbiorczo — bez N+1),
 │       │   │                 #   HrAlertService (alerty kadrowe), LocalAccountService (konta lokalne BCrypt, tryb Mały Urząd),
 │       │   │                 #   PreInterviewSurveyService, CycleEvents + MailNotifier (SMTP po commicie),
-│       │   │                 #   WorkingNotesRetentionService (czyszczenie notatek roboczych i ankiet zamkniętych cykli)
+│       │   │                 #   WorkingNotesRetentionService (czyszczenie notatek roboczych i ankiet zamkniętych cykli),
+│       │   │                 #   PrivateNoteService (prywatny dziennik — tylko właściciel), ManagementReportService
+│       │   │                 #   (plan szkoleń z IPRZ, kalibracja per komórka, sprawozdanie Szefa SC)
 │       │   ├── pdf/          # SheetHtmlRenderer (wzór arkusza A/B/C 1:1, SheetParts: całość / cz. I), GotenbergClient (HTML -> PDF/A-2b)
 │       │   ├── export/       # czyste renderery: IcsCalendarRenderer (RFC 5545), CsvReportRenderer (BOM, „;”, <k)
 │       │   ├── repository/   # Spring Data JPA
@@ -58,13 +61,16 @@
 │                                        #   appeal_round + seed (DG = wyższe stanowisko, #20 umowa okresowa, #21 dwie negatywne),
 │                                        #   V12 hasła lokalne + offices.local_auth_enabled + pre_interview_surveys + schemat v2
 │                                        #   (od 2027-01-01, allowCustom=true), V13 employment_start_date, job_description,
-│                                        #   working_notes_purged_at
+│                                        #   working_notes_purged_at, V14 criteria_expectations_json, pola podpisu
+│                                        #   (signature_hash, verification_code, signed_at, paper_signed_on, scan_reference),
+│                                        #   users.secondary_roles, employee_private_notes
 │   └── src/test/                        # JUnit 5: rules/, pdf/, export/, auth/ (JwtAttackTest, RateLimitFilterTest), service/
 │                                        #   + it/ApiIntegrationTest, it/ProcessCompletionIntegrationTest (Etap 7: przypisywanie,
 │                                        #   powiadomienia, mały urząd, zastępstwa, kadry, korekta), it/SecurityIntegrationTest (IDOR, eskalacja, izolacja urzędów,
 │                                        #   wstrzyknięcia), it/LegalComplianceIntegrationTest (statusy zatrudnienia, alerty, REDO →
 │                                        #   ponowny sprzeciw, sąd pracy, retencja), it/SmallOfficeIntegrationTest (konta lokalne,
-│                                        #   ankieta, e-maile — JavaMailSender jako @MockBean)
+│                                        #   ankieta, e-maile — JavaMailSender jako @MockBean), it/ManagementAndPrivacyIntegrationTest
+│                                        #   (oczekiwania, podpisy, role łączone, prywatny dziennik, raporty)
 │                                        #   (Testcontainers PostgreSQL: migracje V1–V5, walidacja JPA, scenariusze API);
 │                                        #   resources/docker-java.properties (api.version=1.44 dla Docker Engine 29+)
 ├── ai-gateway/               # Python 3.11 / FastAPI — AI & Privacy Gateway (kod zgodny z 3.9+)
@@ -80,6 +86,7 @@
 │   ├── app/consistency.py    # deterministyczne reguły spójności arkusza (skalibrowane na arkuszach KPRM)
 │   ├── app/guardrails.py     # brak propozycji punktów, brak treści medycznych, disclaimer AI Act
 │   └── tests/                # pytest: test_pii, test_consistency, test_api, test_kprm_regression, test_suggest_criteria,
+│                             #   test_hr_partner_extensions (świeżość, SBI, karty rozmów, 70-20-10, mentoring, complianceMeta),
 │                             #   test_security (PII, prompt injection, walidacja, limit 64 KB, DoS — regresje luk z audytu)
 │       └── fixtures/kprm_example_sheets.json  # pola 10 arkuszy wzorcowych KPRM + oczekiwane kody błędów
 └── frontend/                 # Next.js 16 (App Router) + TypeScript + Tailwind 3, React 19
@@ -152,11 +159,11 @@ Stronicowanie (opcjonalne, wstecznie zgodne): `GET /api/cycles`, `/api/hr/employ
 | GET/PUT | `/api/cycles/{id}/self-prep` | PUT: tylko oceniany; GET: oceniany, oceniający/zastępca (treść tylko gdy `sharedWithEvaluator`), inni 403 | przygotowanie ocenianego `{achievements, challenges, developmentNeeds, sharedWithEvaluator}` |
 | GET | `/api/team/overview` | EVALUATOR, DG | „Mój zespół”: mapa kompetencji (ostatnie oceny cząstkowe) + średnie, mentoring (mentor 7–9 / mentee ≤ 5), sygnały (`HrFactsRules`) — zapytania zbiorcze |
 | POST | `/api/cycles/{id}/next` | HR / oceniający | tylko z `COMPLETED`: po NEGATIVE ponowna ocena (`startDate = acknowledgedAt`, +6 mies.), po POSITIVE zwykły cykl od daty oceny; zawsze najnowszy schemat |
-| POST | `/api/cycles/{id}/criteria` | oceniający | `{"additional":[{"code":"K07"}], "interviewDate"?}` — obowiązkowe wg arkusza + 0–3 z katalogu (status DRAFT_CRITERIA) |
+| POST | `/api/cycles/{id}/criteria` | oceniający | `{"additional":[{"code":"K07"}], "interviewDate"?, "expectations"?: {"K07": "oczekiwania na poziomie 5 pkt"}}` (klucze wyłącznie z kryteriów arkusza, inaczej 422; zwracane jako `criteriaExpectations`) — obowiązkowe wg arkusza + 0–3 z katalogu (status DRAFT_CRITERIA) |
 | POST | `/api/cycles/{id}/confirm-criteria` | oceniany | → OBSERVATION (kryteria zablokowane) |
 | GET/POST | `/api/cycles/{id}/notes` | oceniający (POST); oceniany widzi swoje + `isSharedAfterEval` po ocenie | |
 | PUT | `/api/cycles/{id}/evaluate` | oceniający | `submit=false` → EVALUATION_DRAFT; `submit=true` → walidacja § 11 → AWAITING_ACK (+ `evaluationInterviewDate`, `delayReason`, `signatureMethod`); **ocena po terminie nie jest blokowana** — audyt `EVALUATION_OVERDUE` |
-| POST | `/api/cycles/{id}/acknowledge` | oceniany | opcjonalnie `{signatureMethod: MOBYWATEL_QES\|PAPER_HYBRID\|SYSTEM_DEMO}` (domyślnie SYSTEM_DEMO) → COMPLETED, termin sprzeciwu +7 dni |
+| POST | `/api/cycles/{id}/acknowledge` | oceniany | opcjonalnie `{signatureMethod, paperSignedOn?, scanReference?}` — tryby `QUALIFIED_OR_TRUSTED` (QES / Profil Zaufany / mObywatel), `INTERNAL_AUDIT_STAMP`, `HYBRID_PAPER_SCAN` (wymaga `paperSignedOn`, 422); dawne `MOBYWATEL_QES\|PAPER_HYBRID\|SYSTEM_DEMO` (domyślnie SYSTEM_DEMO) mapowane przez `SignatureMethod.mode()` → COMPLETED, termin sprzeciwu +7 dni; zawsze `signatureHash` (SHA-256), `signatureVerificationCode` (drukowany na PDF), `signedAt` i audyt z `sha256` |
 | POST | `/api/cycles/{id}/refusal` | oceniający / HR | fikcja zapoznania (powód, data) → COMPLETED, +7 dni na sprzeciw |
 | POST | `/api/cycles/{id}/appeal` | oceniany | → APPEALED (w terminie); `appealDecisionDeadline` = +14 dni (art. 83 ust. 3); po REDO ponowny sprzeciw (art. 83 ust. 4, czyści poprzednią decyzję); po CHANGE 409 — tylko sąd pracy (`appealAllowed=false`) |
 | POST | `/api/cycles/{id}/appeal/decision` | DG | `appealRound`+1; CHANGE (nowe oceny) → COMPLETED (zdarzenie `CycleClosed`; ocena negatywna → e-mail z terminem ponownej oceny); REDO → EVALUATION_DRAFT, nowy `dueDate` = max(bieżący, decyzja + 14 dni), czyści datę rozmowy/podpis (.ics z `SEQUENCE = appealRound`), e-mail |
@@ -169,6 +176,11 @@ Stronicowanie (opcjonalne, wstecznie zgodne): `GET /api/cycles`, `/api/hr/employ
 | GET | `/api/cycles/{id}/ezd-package` | jak `GET /api/cycles/{id}` | metadane KRI/EZD RP: `caseId`, `title`, `documentType`, `sheetType`, `office`, `parties`, `status`, `evaluatedOn`, `acknowledgedAt`, `signatureMethod`, `format`, `access`, `legalBasis`, `pdfEndpoint`, `schemaVersion`, `generatedAt`, `retention {personnelFilePart: B, years 10/50, category, basis, legalHold, retainUntil}`, `archiveContents`, `excludedFromArchive` (EmployeeNote, PreInterviewSurvey, EmployeeSelfPrep), `exclusionReason` |
 | GET | `/api/cycles/{id}/hr-facts` | jak `GET /api/cycles/{id}`, ale **nie oceniany** (D4) | fakty z bazy dla HR Partnera: `{absenceDays, scopeChangesCount, overloadNotesCount, totalNotesCount, daysSinceLastNote, overdueDays}` |
 | GET | `/api/hr/reports/export` | HR, DG | CSV (UTF-8 z BOM, `;`) — te same agregaty co `/api/stats/summary` + eskalacja; liczności 1..k-1 jako `<k`; audyt `REPORT_EXPORTED` |
+| GET/POST/PUT/DELETE | `/api/private-notes[/{id}]?cycleId=` | wyłącznie właściciel (`ownerId == current`), inni 403 | prywatny dziennik pracownika `{cycleId? (tylko własny cykl), content ≤ 10 000}`; bez audytu treści, poza aktami, EZD i eksportem RODO kadr |
+| PATCH | `/api/admin/accounts/{id}/roles` | KPRM_ADMIN, HR (urząd) | `{secondaryRoles}` — łączenie ról w małym urzędzie (np. DG + EVALUATOR + HR); KPRM_ADMIN → 403; audyt `SECONDARY_ROLES_SET` |
+| GET | `/api/hr/iprz-summary` | HR, DG | plan szkoleń z zatwierdzonych IPRZ: `{approvedPlans, byCriterion[{criterionCode, criterionName, actions, employees}], byFormType, topActions}` |
+| GET | `/api/stats/calibration?year=` | HR, DG | per komórka: `evaluations`, `averageScore`, rozkład poziomów i wyników (`{value, suppressed}`); komórki z < k ocenami pominięte (`suppressedDepartments`) |
+| GET | `/api/hr/export/ssc-report.csv?year=` | HR, DG | CSV do Sprawozdania Szefa SC: oceny (sporządzone / pozytywne / negatywne), sprzeciwy wniesione i uwzględnione (APPEAL_FILED / APPEAL_DECIDED), odwołania do sądu, wnioski z art. 89, przypadki art. 71 ust. 1 pkt 1 — liczby dokładne (sprawozdawczość urzędu); audyt `SSC_REPORT_EXPORTED` |
 | GET | `/api/hr/alerts` | HR, DG | alerty z historii + bieżącej oceny (AWAITING_ACK): `TWO_NEGATIVE_TERMINATION` (CRITICAL, urzędnik SC, art. 71 ust. 1 pkt 1), `TWO_NEGATIVE_INFO` (pracownik SC na czas nieokreślony), `MANDATORY_GRADE` (art. 89 ust. 2); krytyczne pierwsze |
 | POST | `/api/hr/retention/purge-working-notes` | HR | czyszczenie danych pomocniczych zamkniętych cykli urzędu (COMPLETED, bez legal hold, po `RETENTION_GRACE_DAYS` od zamknięcia): notatki, ankiety przed rozmową, self-prep → `{cyclesPurged, notesDeleted, surveysDeleted, skippedLegalHold}`; arkusz, historia i audyt zostają; audyt `WORKING_NOTES_PURGED` |
 | GET | `/api/hr/overdue` | HR, DG | aktywne cykle po terminie (bez sporządzonej oceny), malejąco wg `overdueDays`, z `escalationLevel`: 1–7 OCENIAJACY, 8–14 ZASTEPCA, 15–30 KADRY, > 30 DYREKTOR_GENERALNY |
@@ -178,7 +190,7 @@ Stronicowanie (opcjonalne, wstecznie zgodne): `GET /api/cycles`, `/api/hr/employ
 | GET | `/api/admin/schemas/{id}/package` | KPRM_ADMIN | pakiet reguł `meritum-rules-<versionCode>.json` (`format`, `versionCode`, `effectiveFrom`, `periodMonths`, `config`) |
 | GET | `/api/audit-logs?limit=&page=&size=` | HR, DG (urząd), KPRM_ADMIN (wszystko) | ostatnie zdarzenia audytowe |
 | POST | `/api/wellbeing` | każdy | `{workload, energy, support (1–5), wantsConversation}` — technicznie anonimowa (bez `user_id`, data bez godziny), bez audytu, tylko agregaty |
-| POST | `/api/core-ai/{socratic-draft\|consistency-check\|hr-partner\|interview-prep\|suggest-criteria}?cycleId=` | zalogowany; `socratic-draft`, `hr-partner`, `interview-prep`, `suggest-criteria` — tylko EVALUATOR / DG / HR | proxy do ai-gateway + wpis `AI_*` w `audit_logs` (tryb LLM, `maskedPrompt` przycięty do 4000 znaków, kody ostrzeżeń) — AI Act art. 26; `suggest-criteria` z `cycleId` dostaje `job_description` z profilu ocenianego (nadpisuje wartość z przeglądarki) |
+| POST | `/api/core-ai/{socratic-draft\|consistency-check\|hr-partner\|interview-prep\|suggest-criteria\|appreciation-nudge\|team-mentoring}?cycleId=` | zalogowany; wszystkie poza `consistency-check` — tylko EVALUATOR / DG / HR | proxy do ai-gateway + wpis `AI_*` w `audit_logs` (tryb LLM, `maskedPrompt` przycięty do 4000 znaków, kody ostrzeżeń) — AI Act art. 26; `suggest-criteria` z `cycleId` dostaje `job_description` z profilu ocenianego (nadpisuje wartość z przeglądarki) |
 | GET | `/api/hr/employees?q=&sort=&dir=&page=&size=` | HR | lista pracowników urzędu |
 | POST | `/api/hr/absences` | HR | rejestracja nieobecności, przeliczenie `due_date` |
 | POST | `/api/hr/handover` | HR | zmiana przełożonego (§ 9 ust. 3) |
@@ -197,12 +209,17 @@ Stronicowanie (opcjonalne, wstecznie zgodne): `GET /api/cycles`, `/api/hr/employ
 |---|---|---|
 | GET | `/health` | status, `llm_mode` (LIVE / MOCK) |
 | POST | `/api/ai/socratic-draft` | `masked_prompt`, `socratic_questions`, `draft_justification`, `ai_disclaimer` — nigdy nie proponuje punktów |
-| POST | `/api/ai/consistency-check` | `warnings[{code, severity, message}]`, `auto_modified: false` |
+| POST | `/api/ai/consistency-check` | opcjonalnie `notes[{date, text}]`, `periodEnd`, `recentScopeChange` → `warnings[{code, severity, message}]`, `auto_modified: false` |
 | POST | `/api/ai/hr-partner` | `masked_prompt`, `burnout_risk_signal`, `conversation_starters`, `organizational_suggestions`, `appreciation_moment` |
-| POST | `/api/ai/interview-prep` | `{stage: INITIAL\|EVALUATION\|FEEDBACK}` (FEEDBACK — FUKO + docenienie z notatek) → `goal`, `agenda[{topic, legal_basis, questions}]` (§ 5 ust. 1: 4 zagadnienia / § 10: 3), `difficult_situations`, `development_catalog` (IPRZ) |
+| POST | `/api/ai/interview-prep` | `{stage: INITIAL\|EVALUATION\|FEEDBACK, difficultScenario?: SCORE_DROP\|NEGATIVE_EVALUATION\|OVERLOAD_SIGNALS}` (FEEDBACK — FUKO + docenienie z notatek) → `goal`, `agenda[{topic, legal_basis, questions}]` (§ 5 ust. 1: 4 zagadnienia / § 10: 3), `difficult_situations`, `development_catalog` (IPRZ, zawsze `onTheJob70`/`social20`/`formal10`, `estimatedCostPln: 0`), `difficult_conversation {structure, questions, role_boundaries}` (stała treść karty) |
 | POST | `/api/ai/suggest-criteria` | `{position_title, department, sheet_type, mandatory_codes, responsibilities_summary, job_description?}` → `masked_prompt`, `suggestions[{code, name, reason, expectations}]` (max 3, wyłącznie z katalogu, spoza obowiązkowych — filtr także na odpowiedzi LLM), `ai_disclaimer`, `mode` |
+| POST | `/api/ai/appreciation-nudge` | `{employee_name?, observations, completedTasks}` → `masked_prompt`, SBI `situation`/`behavior`/`impact` + `message` (docenienie przed oceną) |
+| POST | `/api/ai/team-mentoring` | `{members[{alias, strongCriteria, developmentAreas}]}` (2–200, kody K.. lub nazwy) → `pairs[{mentor, mentee, criterion, rationale}]` (reguły, mentor max 2 osoby), `unmatched`, `mode: RULES` |
 
-Kody `consistency-check`: `CRITERIA_MISMATCH`, `FOREIGN_NAME`, `LEVEL_MISMATCH`, `AVERAGE_MISMATCH`, `DUPLICATE_TEXT`, `GENDER_MISMATCH`.
+Każda odpowiedź endpointów `/api/ai/*` ma `complianceMeta {piiAnonymized, redactedCount (liczba zamaskowanych wystąpień —
+`PiiMasker.redacted_count`), humanInTheLoopRequired, advisoryOnly, disclaimer}` (AI Act, zał. III pkt 4).
+Kody `consistency-check`: `CRITERIA_MISMATCH`, `FOREIGN_NAME`, `LEVEL_MISMATCH`, `AVERAGE_MISMATCH`, `DUPLICATE_TEXT`, `GENDER_MISMATCH`,
+`RECENCY_BIAS` (≥ 3 notatki, > 75% z ostatnich 90 dni okresu), `RECENT_SCOPE_CHANGE` (przypomnienie o okresie wdrożenia).
 Frontend woła AI wyłącznie przez `/api/core-ai/*?cycleId=` (audyt), nie bezpośrednio `/api/ai/*`.
 | — | `/swagger-ui.html` | | dokumentacja |
 
@@ -264,6 +281,8 @@ Zakończenie (zapoznanie, fikcja zapoznania, zmiana oceny przez DG) zapisuje wpi
   anonimizacji RODO): 10 lat (stosunek pracy od 1.01.2019), 50 lat (wcześniej lub brak `employment_start_date`), legal hold
   przy sporze sądowym. Czyszczone są wyłącznie dane pomocnicze zamkniętych cykli (notatki robocze, ankiety przed rozmową,
   self-prep) — jawnie wyłączone z paczki archiwalnej EZD (zakaz „czarnych teczek”).
+- **Role łączone** (`users.secondary_roles`): `Access.requireRole` i kontrole w serwisach używają `User.hasRole` (rola główna
+  lub dodatkowa); widoczność cykli wg najszerszej roli (KPRM_ADMIN > HR > DG). KPRM_ADMIN nie może być rolą dodatkową.
 - **Mały urząd bez DG** (`offices.has_dg_role = false`, `AppealAuthority`): sprzeciw rozpatruje kierownik urzędu (użytkownik z
   rolą DG); PDF (pouczenie art. 83 ust. 1), `CycleDto.appealAuthority`, etykieta roli, drabina eskalacji > 30 dni i komunikaty
   w UI używają nazwy organu dynamicznie.

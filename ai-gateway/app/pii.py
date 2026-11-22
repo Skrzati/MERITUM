@@ -131,6 +131,8 @@ class PiiMasker:
     detected_persons: List[DetectedPerson] = field(default_factory=list)
     _tokens: Dict[Tuple[str, str], str] = field(default_factory=dict)
     _counters: Dict[str, int] = field(default_factory=dict)
+    # liczba zastąpionych wystąpień danych osobowych we wszystkich zamaskowanych fragmentach (complianceMeta)
+    redacted_count: int = 0
 
     def __post_init__(self) -> None:
         for name in self.known_names:
@@ -146,6 +148,7 @@ class PiiMasker:
         for s in self._non_overlapping(spans):
             parts.append(text[pos:s.start])
             parts.append(self._token(s.kind, s.key, s.original))
+            self.redacted_count += 1
             pos = s.end
         parts.append(text[pos:])
         return "".join(parts)

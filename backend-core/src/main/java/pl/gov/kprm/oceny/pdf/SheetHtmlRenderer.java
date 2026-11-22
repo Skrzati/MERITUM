@@ -12,6 +12,7 @@ import pl.gov.kprm.oceny.rules.Criterion;
 import pl.gov.kprm.oceny.rules.EvaluationOutcome;
 import pl.gov.kprm.oceny.rules.EvaluationRuleEngine;
 import pl.gov.kprm.oceny.rules.PerformanceLevel;
+import pl.gov.kprm.oceny.rules.SignatureStamp;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -210,8 +211,21 @@ public class SheetHtmlRenderer {
                             "imię i nazwisko lub pieczątka ocenianego"))
                     .append(field("", "podpis ocenianego")).append("</div>");
         }
-        if (c.getSignatureMethod() == SignatureMethod.MOBYWATEL_QES) {
+        SignatureMethod mode = c.getSignatureMethod() == null ? null : c.getSignatureMethod().mode();
+        if (mode == SignatureMethod.QUALIFIED_OR_TRUSTED) {
             h.append("<p class=\"qes\">✔ ").append(QES_NOTE).append("</p>");
+        }
+        if (mode == SignatureMethod.HYBRID_PAPER_SCAN && c.getPaperSignedOn() != null) {
+            h.append("<p class=\"muted\">Podpis odręczny złożono ").append(date(c.getPaperSignedOn()));
+            if (c.getScanReference() != null) {
+                h.append(" · skan: ").append(esc(c.getScanReference()));
+            }
+            h.append("</p>");
+        }
+        if (c.getEvaluatedOn() != null) {
+            // kod weryfikacyjny wydruku hybrydowego = początek SHA-256 treści arkusza
+            h.append("<p class=\"muted\">Kod weryfikacyjny dokumentu: <b>")
+                    .append(SignatureStamp.verificationCode(SignatureStamp.fingerprint(c))).append("</b></p>");
         }
         if (c.getDelayReason() != null && !c.getDelayReason().isBlank()) {
             h.append("<p class=\"muted\">Ocena sporządzona po terminie — przyczyna: ").append(esc(c.getDelayReason()))

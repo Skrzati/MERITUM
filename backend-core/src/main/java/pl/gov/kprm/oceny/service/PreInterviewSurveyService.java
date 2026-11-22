@@ -154,7 +154,7 @@ public class PreInterviewSurveyService {
         if (workflow.canActAsEvaluator(cycle, user)) {
             return Role.EVALUATOR;
         }
-        if (user.getRole() == Role.HR && user.getOfficeId().equals(cycle.getOfficeId())) {
+        if (user.hasRole(Role.HR) && user.getOfficeId().equals(cycle.getOfficeId())) {
             return Role.HR;
         }
         throw forbidden("Ankieta przygotowawcza jest dostępna dla ocenianego, przełożonego i kadr");

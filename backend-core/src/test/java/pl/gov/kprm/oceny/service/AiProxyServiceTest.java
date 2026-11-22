@@ -65,4 +65,46 @@ class AiProxyServiceTest {
 
         server.verify();
     }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"appreciation-nudge", "team-mentoring"})
+    void newHrPartnerOperationsAreProxiedAndAudited(String operation) throws Exception {
+        var builder = org.springframework.web.client.RestClient.builder();
+        var server = org.springframework.test.web.client.MockRestServiceServer.bindTo(builder).build();
+        var audit = org.mockito.Mockito.mock(AuditService.class);
+        server.expect(org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo("http://ai/api/ai/" + operation))
+                .andRespond(org.springframework.test.web.client.response.MockRestResponseCreators
+                        .withSuccess("{\"mode\": \"MOCK\", \"masked_prompt\": \"[OSOBA_1]\", "
+                                        + "\"complianceMeta\": {\"advisoryOnly\": true}}",
+                                org.springframework.http.MediaType.APPLICATION_JSON));
+        var service = new AiProxyService(builder, "http://ai", audit, org.mockito.Mockito.mock(CycleWorkflowService.class),
+                org.mockito.Mockito.mock(pl.gov.kprm.oceny.repository.UserRepository.class), 65536, 4000);
+        var evaluator = new pl.gov.kprm.oceny.domain.User();
+        evaluator.setId(2L);
+        evaluator.setOfficeId(1L);
+        evaluator.setRole(pl.gov.kprm.oceny.domain.Role.EVALUATOR);
+
+        var response = service.call(operation, new ObjectMapper().readTree("{}"), evaluator, null);
+
+        server.verify();
+        assertThat(response.path("complianceMeta").path("advisoryOnly").asBoolean()).isTrue();
+        org.mockito.Mockito.verify(audit).log(org.mockito.ArgumentMatchers.eq(evaluator), org.mockito.ArgumentMatchers.eq(1L),
+                org.mockito.ArgumentMatchers.eq("AI_" + operation.toUpperCase().replace('-', '_')),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"appreciation-nudge", "team-mentoring"})
+    void newHrPartnerOperationsAreSupervisorOnly(String operation) {
+        var service = new AiProxyService(org.springframework.web.client.RestClient.builder(), "http://ai",
+                org.mockito.Mockito.mock(AuditService.class), org.mockito.Mockito.mock(CycleWorkflowService.class),
+                org.mockito.Mockito.mock(pl.gov.kprm.oceny.repository.UserRepository.class), 65536, 4000);
+        var employee = new pl.gov.kprm.oceny.domain.User();
+        employee.setOfficeId(1L);
+        employee.setRole(pl.gov.kprm.oceny.domain.Role.EVALUATED);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.call(operation, null, employee, null))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("403");
+    }
 }

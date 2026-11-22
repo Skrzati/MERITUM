@@ -29,6 +29,8 @@ import pl.gov.kprm.oceny.service.HrService.RemovalOutcome;
 import pl.gov.kprm.oceny.service.HrService.ImportResult;
 import pl.gov.kprm.oceny.service.OverdueService;
 import pl.gov.kprm.oceny.service.OverdueService.OverdueItem;
+import pl.gov.kprm.oceny.service.ManagementReportService;
+import pl.gov.kprm.oceny.service.ManagementReportService.IprzSummary;
 import pl.gov.kprm.oceny.service.ReportExportService;
 import pl.gov.kprm.oceny.service.WorkingNotesRetentionService;
 import pl.gov.kprm.oceny.service.WorkingNotesRetentionService.PurgeResult;
@@ -48,6 +50,7 @@ public class HrController {
     private final ReportExportService reports;
     private final HrAlertService alerts;
     private final WorkingNotesRetentionService retention;
+    private final ManagementReportService management;
 
     /** Aktywne cykle po terminie (HR, DG) — malejąco wg liczby dni opóźnienia, z poziomem eskalacji. */
     @GetMapping("/overdue")
@@ -65,6 +68,22 @@ public class HrController {
     @PostMapping("/retention/purge-working-notes")
     public PurgeResult purgeWorkingNotes(@CurrentUser User user) {
         return retention.purgeForOffice(user);
+    }
+
+    /** Plan szkoleń urzędu: najczęstsze obszary rozwojowe z zatwierdzonych IPRZ (art. 108). */
+    @GetMapping("/iprz-summary")
+    public IprzSummary iprzSummary(@CurrentUser User user) {
+        return management.iprzSummary(user);
+    }
+
+    /** Zestawienie do rocznego Sprawozdania Szefa Służby Cywilnej (CSV, UTF-8 z BOM, separator „;”). */
+    @GetMapping(value = "/export/ssc-report.csv", produces = "text/csv")
+    public ResponseEntity<byte[]> sscReport(@CurrentUser User user, @RequestParam(required = false) Integer year) {
+        return ResponseEntity.ok()
+                .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment().filename("sprawozdanie-szefa-sc.csv").build().toString())
+                .body(management.sscReportCsv(user, year).getBytes(StandardCharsets.UTF_8));
     }
 
     @GetMapping("/employees")
@@ -88,7 +107,8 @@ public class HrController {
                                   @Valid @RequestBody UpdateEmployeeRequest req) {
         return UserDto.of(hr.updateEmployee(user, id, new EmployeeUpdate(req.firstName(), req.lastName(), req.department(),
                 req.positionTitle(), req.role(), req.civilServant(), req.employmentStatus(), req.civilServiceGrade(), req.appointmentYear(),
-                req.lastGradeDate(), req.supervisorId(), req.jobDescription(), req.employmentStartDate())));
+                req.lastGradeDate(), req.supervisorId(), req.jobDescription(), req.employmentStartDate(),
+                req.secondaryRoles())));
     }
 
     /** Usunięcie danych pracownika: DELETED (brak śladów w procesie) albo ANONYMIZED (cykle/historia/audyt zachowane). */

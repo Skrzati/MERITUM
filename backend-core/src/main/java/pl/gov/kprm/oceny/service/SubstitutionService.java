@@ -78,7 +78,7 @@ public class SubstitutionService {
 
     @Transactional(readOnly = true)
     public List<EvaluatorSubstitution> list(User user) {
-        return user.getRole() == Role.HR || user.getRole() == Role.DG
+        return user.hasRole(Role.HR) || user.hasRole(Role.DG)
                 ? substitutions.findByOfficeIdOrderByStartDateDesc(user.getOfficeId())
                 : substitutions.findByEvaluatorIdOrDeputyIdOrderByStartDateDesc(user.getId(), user.getId());
     }

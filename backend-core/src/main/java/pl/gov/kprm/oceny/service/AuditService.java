@@ -52,7 +52,7 @@ public class AuditService {
         Access.requireRole(user, Role.HR, Role.DG, Role.KPRM_ADMIN);
         PageRequest page = Paging.of(pageNumber, size, Sort.unsorted())
                 .orElseGet(() -> PageRequest.of(0, Math.max(1, Math.min(limit, MAX_LIMIT))));
-        return user.getRole() == Role.KPRM_ADMIN
+        return user.hasRole(Role.KPRM_ADMIN)
                 ? auditLogs.findAllByOrderByCreatedAtDescIdDesc(page)
                 : auditLogs.findByOfficeIdOrderByCreatedAtDescIdDesc(user.getOfficeId(), page);
     }

@@ -70,7 +70,7 @@ public class NotificationService {
         LocalDate today = LocalDate.now(clock);
         List<EvaluationCycle> visible = workflow.visibleFor(user);
         List<Notification> result = new ArrayList<>();
-        if (user.getRole() == Role.HR || user.getRole() == Role.DG) {
+        if (user.hasRole(Role.HR) || user.hasRole(Role.DG)) {
             employmentAlerts(user, result);
         }
         if (visible.isEmpty()) {
@@ -132,7 +132,7 @@ public class NotificationService {
                 s.getSentAt().atZoneSameInstant(clock.getZone()).toLocalDate()));
         return new Context(UserNames.byId(users, visible.stream().map(EvaluationCycle::getEmployeeId).toList()),
                 history.forCycles(visible), lastNote, lastCheckin, pending, hasDg, substitutions.substitutedBy(user.getId()),
-                user.getRole() == Role.HR || user.getRole() == Role.DG, surveySent);
+                user.hasRole(Role.HR) || user.hasRole(Role.DG), surveySent);
     }
 
     private void deadlines(EvaluationCycle c, String who, LocalDate today, Context ctx, List<Notification> out) {

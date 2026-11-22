@@ -83,6 +83,16 @@ public class EvaluationCycle {
     private int appealRound;
     /** Dane pomocnicze (notatki robocze, ankiety) usunięte po zamknięciu cyklu; arkusz pozostaje w części B akt. */
     private OffsetDateTime workingNotesPurgedAt;
+    /** Kod kryterium → ustalone oczekiwania (zachowania na poziomie 5 pkt), § 5 ust. 1 pkt 3. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    private JsonNode criteriaExpectationsJson;
+    /** SHA-256 treści arkusza w chwili podpisu ({@link pl.gov.kprm.oceny.rules.SignatureStamp}). */
+    private String signatureHash;
+    private String signatureVerificationCode;
+    private OffsetDateTime signedAt;
+    /** Tryb hybrydowy: data podpisu odręcznego i opcjonalna referencja skanu (np. znak sprawy EZD). */
+    private LocalDate paperSignedOn;
+    private String scanReference;
 
     public enum IprzStatus { DRAFT, PROPOSED, APPROVED }
 }
