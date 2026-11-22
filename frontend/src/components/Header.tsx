@@ -81,7 +81,9 @@ export function Header() {
             </ul>
           </nav>
 
-          <div className="flex items-center gap-2">
+          {/* ml-auto: po zawinięciu wiersza (6 pozycji menu) dzwonek i konto zostają przy prawej krawędzi,
+              więc rozwijane panele przypięte do prawej nie wychodzą poza okno */}
+          <div className="ml-auto flex items-center gap-2">
             {current && <NotificationBell userId={current.id} />}
             <UserMenu />
           </div>
@@ -253,7 +255,7 @@ function NotificationBell({ userId }: { userId: number }) {
           ) : items.length === 0 ? (
             <p className="px-4 py-3 text-sm text-slate-700">Brak powiadomień.</p>
           ) : (
-            <ul className="max-h-96 overflow-auto">
+            <ul className="max-h-[min(24rem,70vh)] overflow-auto">
               {items.map((n, i) => (
                 <li key={`${n.type}-${n.cycleId}-${i}`} className="border-b border-slate-100 last:border-0">
                   <Link

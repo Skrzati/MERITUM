@@ -420,6 +420,8 @@ Hibernate `ddl-auto: validate` — schemat zmienia WYŁĄCZNIE Flyway.
   handover z ustawionym pracownikiem) i „Pobierz raport sprawozdawczy (CSV)” (`/api/hr/reports/export`).
 - `/audit` — `?limit=100`, filtr „Tylko interakcje AI” (`action` z prefiksem `AI_`), `ModeBadge` z `payload.mode`,
   `MaskedPrompt` z `payload.maskedPrompt`, surowy payload w `<details>`.
+- Rozwijane panele nagłówka (dzwonek, konto) są przypięte do prawej; grupa ma `ml-auto`, żeby po zawinięciu menu
+  (6 pozycji dla HR/DG/KPRM_ADMIN) nie trafiła do lewej krawędzi i panel nie wychodził poza okno.
 - Pobieranie plików (PDF, .ics, CSV, pakiet reguł) wyłącznie przez `download()` z `lib/api.ts` (nagłówek uwierzytelnienia).
 - Uprawnienia w UI wynikają z relacji do cyklu (evaluatorId/employeeId), tak jak w backendzie; UI tylko ukrywa akcje, decyduje backend.
 - Reguły prawa nie są duplikowane w UI: katalog kryteriów z `/api/schemas/{id}`, wynik oceny z silnika reguł (średnia w UI to tylko podgląd).
