@@ -8,6 +8,7 @@ import {
   Badge,
   Button,
   Card,
+  CollapsibleSection,
   Field,
   inputClass,
   MaskedPrompt,
@@ -198,7 +199,13 @@ export function InterviewTab({ view }: { view: CycleView }) {
       </div>
 
       <div className="space-y-6 xl:col-span-2">
-        <PreInterviewSurveyCard view={view} />
+        <CollapsibleSection
+          title="Ankieta przed rozmową"
+          hint="Opcjonalna ankieta przygotowawcza dla pracownika z własnymi pytaniami"
+          defaultOpen={false}
+        >
+          <PreInterviewSurveyCard view={view} />
+        </CollapsibleSection>
         <SelfPrepCard view={view} />
         <CheckinsCard view={view} />
 

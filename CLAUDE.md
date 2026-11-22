@@ -405,6 +405,7 @@ Hibernate `ddl-auto: validate` — schemat zmienia WYŁĄCZNIE Flyway.
   zachowań, checkboxy obowiązkowości [A] [B] [C], dodawanie/usuwanie nowych). Pozostałe klucze `config` przejmowane z
   wersji bazowej; walidacja wyłącznie w backendzie (`CriteriaCatalog.from`, 422). JSON tylko w zwiniętym podglądzie dla IT.
   Przy każdej wersji „Pobierz pakiet reguł (.json)”.
+- Zakładka 3 cyklu: ankieta przed rozmową w zwiniętej `CollapsibleSection` (`defaultOpen={false}`).
 - Historia ocen w `/hr` — okno modalne (`<dialog>`, Escape), przy ocenach z systemu „Otwórz arkusz” i „Pobierz PDF”.
 - `/hr` — karty „Alerty kadrowe” (`/api/hr/alerts`) i „Retencja i dane pomocnicze” (`purge-working-notes`); status
   zatrudnienia, opis stanowiska i data zatrudnienia w edycji pracownika. Kreator cyklu blokuje utworzenie, gdy
