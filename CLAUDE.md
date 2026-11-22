@@ -109,7 +109,7 @@
         │                     #   Krajowy — symulacja), PrivacyNotice (RODO art. 13, AI Act art. 26/50), UserProvider,
         │                     #   AssignCycleDialog (pojedynczo z kreatorem A/B/C § 3 + podgląd terminu / grupowo),
         │                     #   RoleGate, ui.tsx (kit gov.pl, StatusBadge, VisibilityBanner, AiComplianceBadge), hr/*
-        │                     #   (EmployeeEditDialog, EmployeeHistoryPanel, SubstitutionsCard, HrAlertsCard, RetentionCard,
+        │                     #   (EmployeeEditDialog, EmployeeHistoryPanel (modal, linki do arkusza/PDF), SubstitutionsCard, HrAlertsCard, RetentionCard,
         │                     #   IprzSummaryCard), admin/SmallOfficeAccounts (+ role łączone), cycle/* (CriteriaTab,
         │                     #   InterviewTab + PreInterviewSurveyCard, NotesTab + PrivateDiary, EvaluationTab, ChangesTab,
         │                     #   FormCorrectionPanel, AckTab + ScorePicker, ProgressSteps, context.ts)
@@ -405,6 +405,7 @@ Hibernate `ddl-auto: validate` — schemat zmienia WYŁĄCZNIE Flyway.
   zachowań, checkboxy obowiązkowości [A] [B] [C], dodawanie/usuwanie nowych). Pozostałe klucze `config` przejmowane z
   wersji bazowej; walidacja wyłącznie w backendzie (`CriteriaCatalog.from`, 422). JSON tylko w zwiniętym podglądzie dla IT.
   Przy każdej wersji „Pobierz pakiet reguł (.json)”.
+- Historia ocen w `/hr` — okno modalne (`<dialog>`, Escape), przy ocenach z systemu „Otwórz arkusz” i „Pobierz PDF”.
 - `/hr` — karty „Alerty kadrowe” (`/api/hr/alerts`) i „Retencja i dane pomocnicze” (`purge-working-notes`); status
   zatrudnienia, opis stanowiska i data zatrudnienia w edycji pracownika. Kreator cyklu blokuje utworzenie, gdy
   `due-preview` zwraca `blockedReason`.
