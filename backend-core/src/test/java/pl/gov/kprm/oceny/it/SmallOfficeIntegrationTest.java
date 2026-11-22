@@ -213,6 +213,22 @@ class SmallOfficeIntegrationTest {
     }
 
     @Test
+    void remindersAreEmailedOnDemandToPeopleFromOwnOffice() throws Exception {
+        clearInvocations(mail);
+        JsonNode result = send(post("/api/hr/reminders/send-now"), HR, "", 200);
+        int sent = result.path("sent").asInt();
+        assertThat(sent).as("seed ma cykl na etapie kryteriów i osoby uprawnione z art. 89 ust. 2").isPositive();
+        assertThat(result.path("recipients").asInt()).isEqualTo(sent);
+        List<SimpleMailMessage> digests = sentMails().stream()
+                .filter(m -> m.getSubject().contains("Przypomnienia o terminach")).toList();
+        assertThat(digests).hasSize(sent).allSatisfy(m -> {
+            assertThat(m.getTo()).hasSize(1);
+            assertThat(m.getTo()[0]).endsWith("@mc-demo.gov.pl");
+        });
+        send(post("/api/hr/reminders/send-now"), EVALUATOR, "", 403);
+    }
+
+    @Test
     void simulatedGovLoginIsDisabledByDefault() throws Exception {
         JsonNode problem = send(post("/api/auth/gov-login"), null, "{\"userId\": " + HR + "}", 403);
         assertThat(problem.toString()).contains("login.gov.pl").doesNotContain("accessToken");

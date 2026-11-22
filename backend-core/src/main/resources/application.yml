@@ -49,6 +49,9 @@ app:
   mail:
     enabled: ${MAIL_ENABLED:false}
     from: ${MAIL_FROM:meritum@kprm-demo.gov.pl}
+    # zbiorcze przypomnienia o terminach (kryteria, termin oceny, art. 89 ust. 2) — wysyłka tylko przy MAIL_ENABLED=true
+    reminders-enabled: ${MAIL_REMINDERS_ENABLED:false}
+    reminders-cron: ${MAIL_REMINDERS_CRON:0 0 7 * * *}
   stats:
     k-anonymity: ${STATS_K_ANONYMITY:5}
   cors:

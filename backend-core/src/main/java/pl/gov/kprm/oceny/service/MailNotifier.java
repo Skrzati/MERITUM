@@ -19,6 +19,7 @@ import pl.gov.kprm.oceny.rules.EmploymentAlertRules;
 import pl.gov.kprm.oceny.service.CycleEvents.CycleClosed;
 import pl.gov.kprm.oceny.service.CycleEvents.DueDateChanged;
 import pl.gov.kprm.oceny.service.HrAlertService.HrAlert;
+import pl.gov.kprm.oceny.service.NotificationService.Notification;
 
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -26,7 +27,8 @@ import java.util.stream.Stream;
 
 /**
  * Powiadomienia e-mail (SMTP; w demo Mailpit) wysyłane po zatwierdzeniu transakcji: przedłużenie terminu
- * (art. 81 ust. 7), nowy termin po sprzeciwie i krytyczne alerty kadrowe (art. 71 ust. 1 pkt 1). Błąd SMTP nie
+ * (art. 81 ust. 7), nowy termin po sprzeciwie, krytyczne alerty kadrowe (art. 71 ust. 1 pkt 1) oraz zbiorcze
+ * przypomnienia o terminach ({@link ReminderService}). Błąd SMTP nie
  * przerywa procesu — jest logowany; audyt zawiera tylko liczbę odbiorców (adresy to dane osobowe).
  */
 @Slf4j
@@ -96,6 +98,24 @@ public class MailNotifier {
                 });
     }
 
+    /** Zbiorcze przypomnienie dla jednej osoby; {@code true}, gdy wiadomość została wysłana. */
+    public boolean sendReminderDigest(User recipient, List<Notification> reminders) {
+        if (!enabled || reminders.isEmpty()) {
+            return false;
+        }
+        return send(recipient.getOfficeId(), AuditService.USER, recipient.getId(), "REMINDER_DIGEST",
+                reminderDigestMail(reminders, addresses(Stream.of(recipient))));
+    }
+
+    static Mail reminderDigestMail(List<Notification> reminders, List<String> to) {
+        StringBuilder body = new StringBuilder("Zestawienie terminów w procesie ocen okresowych wymagających działania:\n\n");
+        reminders.forEach(n -> body.append("• ").append(n.message())
+                .append(n.cycleId() == null ? "" : " (cykl nr " + n.cycleId() + ")").append('\n'));
+        body.append("\nSzczegóły i powiadomienia w systemie MERITUM. Wiadomość wygenerowana automatycznie.");
+        return new Mail(to, SUBJECT_PREFIX + "Przypomnienia o terminach ocen okresowych (" + reminders.size() + ")",
+                body.toString());
+    }
+
     static Mail dueDateMail(DueDateChanged e, EvaluationCycle cycle, User employee, List<String> to) {
         String who = employee.getFullName();
         return switch (e.reason()) {
@@ -121,9 +141,13 @@ public class MailNotifier {
     }
 
     private void send(Long officeId, Long cycleId, String template, Mail mail) {
+        send(officeId, AuditService.CYCLE, cycleId, template, mail);
+    }
+
+    private boolean send(Long officeId, String entityType, Long entityId, String template, Mail mail) {
         JavaMailSender mailer = sender.getIfAvailable();
         if (mailer == null || mail.to().isEmpty()) {
-            return;
+            return false;
         }
         SimpleMailMessage msg = new SimpleMailMessage();
         msg.setFrom(from);
@@ -132,10 +156,12 @@ public class MailNotifier {
         msg.setText(mail.body());
         try {
             mailer.send(msg);
-            audit.logSystem(officeId, "EMAIL_SENT", AuditService.CYCLE, cycleId,
+            audit.logSystem(officeId, "EMAIL_SENT", entityType, entityId,
                     Map.of("template", template, "recipients", mail.to().size()));
+            return true;
         } catch (MailException e) {
-            log.warn("Nie wysłano e-maila {} dla cyklu {}: {}", template, cycleId, e.getMessage());
+            log.warn("Nie wysłano e-maila {} ({} {}): {}", template, entityType, entityId, e.getMessage());
+            return false;
         }
     }
 

@@ -31,6 +31,8 @@ import pl.gov.kprm.oceny.service.OverdueService;
 import pl.gov.kprm.oceny.service.OverdueService.OverdueItem;
 import pl.gov.kprm.oceny.service.ManagementReportService;
 import pl.gov.kprm.oceny.service.ManagementReportService.IprzSummary;
+import pl.gov.kprm.oceny.service.ReminderService;
+import pl.gov.kprm.oceny.service.ReminderService.ReminderResult;
 import pl.gov.kprm.oceny.service.ReportExportService;
 import pl.gov.kprm.oceny.service.WorkingNotesRetentionService;
 import pl.gov.kprm.oceny.service.WorkingNotesRetentionService.PurgeResult;
@@ -51,6 +53,7 @@ public class HrController {
     private final HrAlertService alerts;
     private final WorkingNotesRetentionService retention;
     private final ManagementReportService management;
+    private final ReminderService reminders;
 
     /** Aktywne cykle po terminie (HR, DG) — malejąco wg liczby dni opóźnienia, z poziomem eskalacji. */
     @GetMapping("/overdue")
@@ -68,6 +71,12 @@ public class HrController {
     @PostMapping("/retention/purge-working-notes")
     public PurgeResult purgeWorkingNotes(@CurrentUser User user) {
         return retention.purgeForOffice(user);
+    }
+
+    /** Zbiorcze przypomnienia e-mail o terminach dla osób z urzędu — ta sama logika co harmonogram dzienny. */
+    @PostMapping("/reminders/send-now")
+    public ReminderResult sendRemindersNow(@CurrentUser User user) {
+        return reminders.sendForOffice(user);
     }
 
     /** Plan szkoleń urzędu: najczęstsze obszary rozwojowe z zatwierdzonych IPRZ (art. 108). */

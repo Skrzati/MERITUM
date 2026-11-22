@@ -37,6 +37,18 @@ class MailNotifierTest {
     }
 
     @Test
+    void reminderDigestListsEveryNotificationWithCycleNumber() {
+        MailNotifier.Mail digest = MailNotifier.reminderDigestMail(List.of(
+                new NotificationService.Notification(NotificationService.Type.CRITERIA_DUE,
+                        NotificationService.Severity.MEDIUM, 7L, LocalDate.of(2026, 12, 1), "Ustalenie kryteriów (§ 7)"),
+                new NotificationService.Notification(NotificationService.Type.MANDATORY_GRADE_DUE,
+                        NotificationService.Severity.HIGH, null, null, "Obligatoryjny stopień (art. 89 ust. 2)")),
+                List.of("a@x.pl"));
+        assertThat(digest.subject()).startsWith(MailNotifier.SUBJECT_PREFIX).endsWith("(2)");
+        assertThat(digest.body()).contains("Ustalenie kryteriów (§ 7) (cykl nr 7)", "art. 89 ust. 2)\n");
+    }
+
+    @Test
     void localPasswordPolicyRequiresLengthLetterAndDigit() {
         LocalAccountService.requireStrong("Weterynaria2026");
         assertThatThrownBy(() -> LocalAccountService.requireStrong("krotkie1")).hasMessageContaining("min. 12");

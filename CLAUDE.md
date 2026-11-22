@@ -18,7 +18,8 @@
 │   ├── Dockerfile            # multi-stage: maven build -> temurin 21 JRE alpine, user non-root
 │   └── src/main/
 │       ├── java/pl/gov/kprm/oceny/
-│       │   ├── config/       # AppConfig (Clock Europe/Warsaw), RetentionScheduler (nocne czyszczenie danych pomocniczych)
+│       │   ├── config/       # AppConfig (Clock Europe/Warsaw), RetentionScheduler (nocne czyszczenie danych pomocniczych),
+│       │   │                 #   ReminderScheduler (codzienne przypomnienia e-mail, `app.mail.reminders-enabled`)
 │       │   ├── domain/       # encje JPA + enumy (CycleStatus z mapą przejść, DgDecision, RescheduleMode/Status,
 │       │   │                 #   ScopeChangeOutcome, HistorySource, SignatureMethod, EscalationLevel); EvaluationHistory, WellbeingSurvey, ScopeChange, RescheduleRequest,
 │       │   │                 #   EvaluatorSubstitution; CycleStatus ma też mapę CORRECTIONS (tryb korekty);
@@ -40,7 +41,8 @@
 │       │   │                 #   PreInterviewSurveyService, CycleEvents + MailNotifier (SMTP po commicie),
 │       │   │                 #   WorkingNotesRetentionService (czyszczenie notatek roboczych i ankiet zamkniętych cykli),
 │       │   │                 #   PrivateNoteService (prywatny dziennik — tylko właściciel), ManagementReportService
-│       │   │                 #   (plan szkoleń z IPRZ, kalibracja per komórka, sprawozdanie Szefa SC)
+│       │   │                 #   (plan szkoleń z IPRZ, kalibracja per komórka, sprawozdanie Szefa SC), ReminderService
+│       │   │                 #   (zbiorcze przypomnienia e-mail z NotificationService — bez tabeli)
 │       │   ├── pdf/          # SheetHtmlRenderer (wzór arkusza A/B/C 1:1, SheetParts: całość / cz. I), GotenbergClient (HTML -> PDF/A-2b)
 │       │   ├── export/       # czyste renderery: IcsCalendarRenderer (RFC 5545), CsvReportRenderer (BOM, „;”, <k)
 │       │   ├── repository/   # Spring Data JPA
@@ -50,7 +52,8 @@
 │       │   └── api/          # kontrolery REST, Dtos, Requests, CycleMapper, ApiExceptionHandler (RFC 7807)
 │       └── resources/
 │           ├── application.yml          # konfiguracja przez env (DB_*, GOTENBERG_URL, AI_GATEWAY_URL, JWT_SECRET,
-│           │                            #   DEMO_HEADER_ENABLED, GOV_LOGIN_ENABLED, STATS_K_ANONYMITY, MAIL_*, RETENTION_*, BCRYPT_STRENGTH)
+│           │                            #   DEMO_HEADER_ENABLED, GOV_LOGIN_ENABLED, STATS_K_ANONYMITY, MAIL_* (w tym
+│           │                            #   MAIL_REMINDERS_*), RETENTION_*, BCRYPT_STRENGTH)
 │           └── db/migration/            # Flyway: V1 schemat, V2 seed, V3 workflow + absences, V4 kryteria v1 (§ 4),
 │                                        #   V5 pola wzoru KPRM + historia/dobrostan/zakres/terminy + opisy kryteriów + seed demo,
 │                                        #   V6 delay_reason + signature_method + 2 cykle po terminie (ustalenia z mentorami),
@@ -191,6 +194,7 @@ Stronicowanie (opcjonalne, wstecznie zgodne): `GET /api/cycles`, `/api/hr/employ
 | GET | `/api/hr/export/ssc-report.csv?year=` | HR, DG | CSV do Sprawozdania Szefa SC: oceny (sporządzone / pozytywne / negatywne), sprzeciwy wniesione i uwzględnione (APPEAL_FILED / APPEAL_DECIDED), odwołania do sądu, wnioski z art. 89, przypadki art. 71 ust. 1 pkt 1 — liczby dokładne (sprawozdawczość urzędu); audyt `SSC_REPORT_EXPORTED` |
 | GET | `/api/hr/alerts` | HR, DG | alerty z historii + bieżącej oceny (AWAITING_ACK): `TWO_NEGATIVE_TERMINATION` (CRITICAL, urzędnik SC, art. 71 ust. 1 pkt 1), `TWO_NEGATIVE_INFO` (pracownik SC na czas nieokreślony), `MANDATORY_GRADE` (art. 89 ust. 2); krytyczne pierwsze |
 | POST | `/api/hr/retention/purge-working-notes` | HR | czyszczenie danych pomocniczych zamkniętych cykli urzędu (COMPLETED, bez legal hold, po `RETENTION_GRACE_DAYS` od zamknięcia): notatki, ankiety przed rozmową, self-prep → `{cyclesPurged, notesDeleted, surveysDeleted, skippedLegalHold}`; arkusz, historia i audyt zostają; audyt `WORKING_NOTES_PURGED` |
+| POST | `/api/hr/reminders/send-now` | HR, DG | zbiorcze przypomnienia e-mail (`CRITERIA_DUE`, `DUE_SOON`, `MANDATORY_GRADE_DUE` z `NotificationService`) dla aktywnych osób urzędu (bez KPRM_ADMIN), jedna wiadomość na osobę → `{recipients, sent}` (`sent` = 0 przy `MAIL_ENABLED=false`); ta sama logika co `ReminderScheduler` (cron `app.mail.reminders-cron`, domyślnie 7:00); audyt `REMINDERS_SENT`, `EMAIL_SENT` (`REMINDER_DIGEST`) |
 | GET | `/api/hr/overdue` | HR, DG | aktywne cykle po terminie (bez sporządzonej oceny), malejąco wg `overdueDays`, z `escalationLevel`: 1–7 OCENIAJACY, 8–14 ZASTEPCA, 15–30 KADRY, > 30 DYREKTOR_GENERALNY |
 | GET | `/api/notifications` | zalogowany | wyliczane w locie dla widocznych cykli: `OVERDUE`, `DUE_SOON` (≤ 30 dni), `CRITERIA_DUE`, `APPEAL_DECISION_DUE`, `MANDATORY_GRADE_DUE`; oceniający/zastępca: `QUARTERLY_CHECKIN` (OBSERVATION, ≥ 90 dni bez aktywności MEDIUM, ≥ 120 HIGH), `RESCHEDULE_PENDING`; HR/DG: `GRADE_REQUEST_SUBMITTED` (30 dni od sporządzenia); oceniany i oceniający: `APPEAL_DECIDED` (30 dni); HR/DG: `HR_CRITICAL_ALERT` / `HR_INFO_ALERT` (`cycleId` może być null); oceniający: `PRE_INTERVIEW_SURVEY_SENT` (30 dni); oceniany: `PRE_INTERVIEW_SURVEY_OPEN` (udostępniona, niewysłana; `dueDate` = termin odpowiedzi); `{type, severity, cycleId, dueDate, message}` |
 | GET/POST | `/api/substitutions` | GET: HR/DG — urząd, pozostali — własne; POST: HR | `{evaluatorId, deputyId, startDate, endDate, reason}` → `SubstitutionDto` (`activeToday`) |
@@ -337,6 +341,7 @@ Hibernate `ddl-auto: validate` — schemat zmienia WYŁĄCZNIE Flyway.
   Seed nie zawiera haseł.
 - E-mail (`MailNotifier`): wysyłka po commicie transakcji (`@TransactionalEventListener`), błąd SMTP nie przerywa procesu;
   audyt `EMAIL_SENT` z liczbą odbiorców (bez adresów). Domyślnie wyłączony (`MAIL_ENABLED=false`), w compose — Mailpit.
+  Przypomnienia o terminach (`ReminderService`) wyliczane w locie jak dzwonek — bez tabeli i bez znacznika wysyłki.
 - Symulowane logowanie (`gov-login`) wyłączone domyślnie (`GOV_LOGIN_ENABLED=false`); testy, które go używają,
   ustawiają `app.auth.gov-login-enabled=true`.
 - Ankieta dobrostanu: dobrowolna, technicznie anonimowa (bez `user_id`, czas z dokładnością do dnia), bez audytu
