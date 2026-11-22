@@ -99,7 +99,8 @@
     ├── next.config.mjs       # rewrite: /api/* -> backend-core (wyliczany w czasie builda!); brak trasy do ai-gateway
     ├── tailwind.config.ts    # paleta `gov` (gov.pl) + tokeny `navy` przemapowane na niebieski gov.pl
     └── src/
-        ├── app/              # strony: / (pulpit, przypisanie oceny, zastępstwa), /cycles/[id] (6 zakładek), /archive (archiwum
+        ├── app/              # strony: / (pulpit, przypisanie oceny, zastępstwa), /cycles/[id] (6 zakładek), /team (Mój zespół —
+        │                     #   EVALUATOR/DG: mapa kompetencji, mentoring, sygnały), /archive (archiwum
         │                     #   zamkniętych ocen z GET /api/cycles: filtry, PDF, paczka EZD), /hr (zaległości +
         │                     #   eskalacja, raport CSV, edycja/usuwanie/anonimizacja, historia ocen, zastępstwa),
         │                     #   /stats, /audit (dziennik, filtr AI, maskedPrompt),
@@ -143,7 +144,8 @@ Publiczne: `/api/health`, `/api/auth/demo-users` (bez e-maili), `/api/auth/gov-l
 `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`
 (+ `Cache-Control: no-store` dla `/api`).
 Błędy: 400 złe parametry (np. stronicowanie), 403 brak uprawnień, 404 brak zasobu, 409 niedozwolone przejście stanu,
-413 za duże żądanie AI (> `app.ai.max-request-bytes`, 64 KB), 422 naruszenie reguł (`violations`, opcjonalnie `result`),
+413 za duże żądanie AI (> `app.ai.max-request-bytes`, 64 KB), 422 naruszenie reguł (`violations`, opcjonalnie `result`)
+oraz odrzucone przez ai-gateway dane wejściowe (4xx gatewaya; 503 tylko przy jego awarii/niedostępności),
 429 rate-limit (`Retry-After`; okno 60 s: `POST /api/auth/*` (gov-login, local-login) 30 / adres klienta, `core-ai` 60 / użytkownik — `app.rate-limit.*`).
 Stronicowanie (opcjonalne, wstecznie zgodne): `GET /api/cycles`, `/api/hr/employees`, `/api/audit-logs` przyjmują
 `page` (od 0) i `size` (1–200); bez parametrów — pełna lista (audyt: `limit`).
@@ -352,7 +354,8 @@ Hibernate `ddl-auto: validate` — schemat zmienia WYŁĄCZNIE Flyway.
 - Porty hosta: tylko frontend (3000) i backend-core (8080); Postgres na 127.0.0.1, Gotenberg i ai-gateway wyłącznie w sieci
   Dockera. W produkcji backend-core za reverse proxy z TLS (HSTS, CSP) i `DEMO_HEADER_ENABLED=false`.
 - Rate-limiting (`RateLimitFilter`): logowanie per adres klienta (`X-Forwarded-For` tylko przy
-  `app.rate-limit.trust-forwarded-for=true`, czyli gdy backend stoi za proxy), AI per użytkownik; stan w pamięci procesu.
+  `app.rate-limit.trust-forwarded-for=true` — domyślnie i w compose, bo backend stoi za proxy Next.js; env
+  `RATE_LIMIT_TRUST_FORWARDED_FOR`), AI per użytkownik; stan w pamięci procesu.
 - Limity rozmiaru AI: 64 KB w backend-core (`AiProxyService`) i w ai-gateway (`BodySizeLimit`); `maskedPrompt` w audycie
   przycinany do `app.ai.audit-prompt-max-chars`.
 - Masker PII ma koszt liniowy — nowe wyrażenia regularne nie mogą wracać po długich ciągach (test DoS w `test_security`).

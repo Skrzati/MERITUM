@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.server.ResponseStatusException;
@@ -83,6 +84,11 @@ public class AiProxyService {
                     .body(body)
                     .retrieve()
                     .body(JsonNode.class);
+        } catch (HttpClientErrorException e) {
+            // 4xx z ai-gateway to błąd danych wejściowych, nie awaria usługi
+            HttpStatus status = e.getStatusCode().value() == HttpStatus.PAYLOAD_TOO_LARGE.value()
+                    ? HttpStatus.PAYLOAD_TOO_LARGE : HttpStatus.UNPROCESSABLE_ENTITY;
+            throw new ResponseStatusException(status, "Usługa AI odrzuciła żądanie — niepoprawne lub niepełne dane", e);
         } catch (RestClientException e) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Usługa AI (ai-gateway) niedostępna", e);
         }
