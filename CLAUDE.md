@@ -67,7 +67,8 @@
 │                                        #   working_notes_purged_at, V14 criteria_expectations_json, pola podpisu
 │                                        #   (signature_hash, verification_code, signed_at, paper_signed_on, scan_reference),
 │                                        #   users.secondary_roles, employee_private_notes, V15 ankieta przed
-│                                        #   rozmową: opens_on (kiedy oceniany ją widzi), answer_deadline, intro_message
+│                                        #   rozmową: opens_on (kiedy oceniany ją widzi), answer_deadline, intro_message,
+│                                        #   V16 evaluation_cycles.evaluated_by (kto sporządził ocenę — oceniający lub zastępca)
 │   └── src/test/                        # JUnit 5: rules/, pdf/, export/, auth/ (JwtAttackTest, RateLimitFilterTest), service/
 │                                        #   + it/ApiIntegrationTest, it/ProcessCompletionIntegrationTest (Etap 7: przypisywanie,
 │                                        #   powiadomienia, mały urząd, zastępstwa, kadry, korekta), it/SecurityIntegrationTest (IDOR, eskalacja, izolacja urzędów,
@@ -215,7 +216,7 @@ Stronicowanie (opcjonalne, wstecznie zgodne): `GET /api/cycles`, `/api/hr/employ
 | GET/POST | `/api/admin/schemas` | KPRM_ADMIN | wersje schematu („prawo jako kod”) |
 | GET | `/api/schemas/{id}` | każdy zalogowany | odczyt wersji schematu (katalog kryteriów dla UI) |
 | GET | `/api/stats/summary` | DG, HR | tylko agregaty; każda liczność to `{value, suppressed}` — 1..k-1 → `{null, true}` (k z `STATS_K_ANONYMITY`, domyślnie 5); `wellbeing` (średnie tylko przy ≥ k odpowiedziach) |
-| GET | `/api/cycles/{id}/pdf[?parts=1]` | jak `GET /api/cycles/{id}` | PDF/A arkusza 1:1 wg wzoru (cz. I–III, średnia z przecinkiem, X w tabeli przyznania oceny, pouczenie art. 83 ust. 1); cz. III tylko urzędnik SC + ocena pozytywna + wniosek; `parts=1` — wyłącznie cz. I (kryteria + podpisy po rozmowie rozpoczynającej), inne wartości niż `1`/`all` → 400; audyt `PDF_EXPORTED` (`parts`) |
+| GET | `/api/cycles/{id}/pdf[?parts=1]` | jak `GET /api/cycles/{id}` | PDF/A arkusza 1:1 wg wzoru (cz. I–III, średnia z przecinkiem, X w tabeli przyznania oceny, pouczenie art. 83 ust. 1); cz. III tylko urzędnik SC + ocena pozytywna + wniosek; `parts=1` — wyłącznie cz. I (kryteria + podpisy po rozmowie rozpoczynającej), inne wartości niż `1`/`all` → 400; przy podpisach oceniającego (cz. I–III) imię i nazwisko po czynności — w cz. II–III sporządzający (`evaluated_by`, adnotacja „w zastępstwie” przy zastępcy); audyt `PDF_EXPORTED` (`parts`) |
 
 ## API (ai-gateway, :8000 — tylko w sieci Dockera; żądania > 64 KB → 413)
 | Metoda | Ścieżka | Efekt |
@@ -300,7 +301,8 @@ Zakończenie (zapoznanie, fikcja zapoznania, zmiana oceny przez DG) zapisuje wpi
   rolą DG); PDF (pouczenie art. 83 ust. 1), `CycleDto.appealAuthority`, etykieta roli, drabina eskalacji > 30 dni i komunikaty
   w UI używają nazwy organu dynamicznie.
 - **Zastępstwa**: aktywny zastępca (dziś ∈ [start, end]) widzi aktywne cykle zastępowanego, działa jak oceniający
-  (`canActAsEvaluator`), dostaje powiadomienia; jego wpisy audytu mają `substituteFor`.
+  (`canActAsEvaluator`), dostaje powiadomienia; jego wpisy audytu mają `substituteFor`. Sporządzenie oceny zapisuje
+  `evaluated_by` (czyszczone razem z `evaluated_on` przy korekcie i REDO) — PDF drukuje sporządzającego.
 - **Przypomnienia kwartalne** (`CheckinRules`): ostatnia aktywność = max(start, potwierdzenie kryteriów, ostatnia notatka,
   ostatni check-in).
 - **Urząd bez DG**: pouczenie w PDF dopisuje podstawę „art. 25 ust. 9 ustawy o służbie cywilnej” (`AppealAuthority.legalBasis`).

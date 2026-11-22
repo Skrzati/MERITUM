@@ -130,6 +130,36 @@ class SheetHtmlRendererTest {
     }
 
     @Test
+    void evaluatorNameIsPrintedAtSignaturesOnceSigned() {
+        String html = renderer.render(data(true, null));
+        assertThat(html).contains("<div class=\"sign-line\">Piotr Nowak</div><div class=\"sign-caption\">"
+                + "imię i nazwisko lub pieczątka oceniającego</div>");
+        SheetData d = data(true, null);
+        d.cycle().setEvaluatedOn(null);
+        d.cycle().setCriteriaInterviewDate(null);
+        assertThat(renderer.render(d)).contains("<div class=\"sign-line\"></div><div class=\"sign-caption\">"
+                + "imię i nazwisko lub pieczątka oceniającego</div>").doesNotContain(">Piotr Nowak</div>");
+    }
+
+    @Test
+    void substituteWhoEvaluatedSignsPartTwo() {
+        SheetData d = data(true, null);
+        d.evaluator().setId(5L);
+        User deputy = new User();
+        deputy.setId(9L);
+        deputy.setFullName("Anna Zielińska");
+        deputy.setPositionTitle("Zastępca naczelnika");
+        SheetData substituted = new SheetData(d.office(), d.employee(), d.evaluator(), d.cycle(), d.criteria(), d.scores(),
+                d.gradeRequest(), d.previousEvaluation(), d.iprzItems(), deputy);
+        String html = renderer.render(substituted);
+        assertThat(html).contains("<div class=\"sign-line\">Anna Zielińska</div>", "Zastępca naczelnika",
+                "Ocenę sporządzono w zastępstwie: Piotr Nowak", "<div class=\"sign-line\">Piotr Nowak</div>");
+        assertThat(renderer.render(new SheetData(d.office(), d.employee(), d.evaluator(), d.cycle(), d.criteria(),
+                d.scores(), d.gradeRequest(), d.previousEvaluation(), d.iprzItems(), d.evaluator())))
+                .doesNotContain("w zastępstwie");
+    }
+
+    @Test
     void escapesUserContent() {
         String html = renderer.render(positive(data(true, GRADE)));
 

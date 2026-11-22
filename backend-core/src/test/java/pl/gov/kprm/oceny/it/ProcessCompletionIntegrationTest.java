@@ -256,6 +256,8 @@ class ProcessCompletionIntegrationTest {
                 "{\"dueDate\": \"2027-05-31\", \"reason\": \"Ujednolicenie terminu z planem kontroli\"}", 200);
         send(patch("/api/cycles/" + SMALL_CYCLE + "/details"), SMALL_EVALUATOR, "{\"dueDate\": \"2025-01-01\", \"reason\": \"x\"}", 422);
 
+        assertThat(jdbc.queryForObject("SELECT evaluated_by = evaluator_id FROM evaluation_cycles WHERE id = 10",
+                Boolean.class)).as("V16: sporządzający uzupełniony dla istniejących ocen").isTrue();
         send(post("/api/cycles/10/admin-correction"), HR, "{\"targetStatus\": \"EVALUATION_DRAFT\"}", 400);
         send(post("/api/cycles/10/admin-correction"), EMPLOYEE, "{\"targetStatus\": \"EVALUATION_DRAFT\", \"reason\": \"x\"}", 403);
         send(post("/api/cycles/10/admin-correction"), HR, "{\"targetStatus\": \"OBSERVATION\", \"reason\": \"x\"}", 409);
@@ -263,6 +265,7 @@ class ProcessCompletionIntegrationTest {
                 "{\"targetStatus\": \"EVALUATION_DRAFT\", \"reason\": \"Błąd w ocenie cząstkowej zgłoszony przez oceniającego\"}", 200);
         assertThat(corrected.path("status").asText()).isEqualTo("EVALUATION_DRAFT");
         assertThat(corrected.path("evaluatedOn").isNull()).isTrue();
+        assertThat(jdbc.queryForObject("SELECT evaluated_by FROM evaluation_cycles WHERE id = 10", Long.class)).isNull();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM evaluation_history WHERE cycle_id = 10", Integer.class)).isZero();
         boolean audited = false;
         for (JsonNode a : fetch("/api/audit-logs?limit=50", HR)) {

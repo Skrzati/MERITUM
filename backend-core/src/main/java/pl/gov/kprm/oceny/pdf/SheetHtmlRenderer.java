@@ -133,8 +133,10 @@ public class SheetHtmlRenderer {
                 .append("<p>Potwierdzamy<br>− przeprowadzenie rozmowy, o której mowa w § 5 ust. 1 ").append(REGULATION)
                 .append(", i omówienie w trakcie tej rozmowy wszystkich wymaganych zagadnień,<br>")
                 .append("− zapoznanie ocenianego z kryteriami oceny oraz terminem sporządzenia oceny.</p>")
-                .append(signature(c.getPlace(), c.getCriteriaInterviewDate(), "podpis oceniającego"))
-                .append(signature(c.getPlace(), c.getCriteriaConfirmedOn(), "podpis ocenianego"))
+                .append(signature(c.getPlace(), c.getCriteriaInterviewDate(),
+                        signerName(d.evaluator(), c.getCriteriaInterviewDate()), "oceniającego"))
+                .append(signature(c.getPlace(), c.getCriteriaConfirmedOn(),
+                        signerName(d.employee(), c.getCriteriaConfirmedOn()), "ocenianego"))
                 .append("</div>");
     }
 
@@ -197,8 +199,13 @@ public class SheetHtmlRenderer {
                 .append(choice("NIE DOTYCZY (oceniany jest pracownikiem służby cywilnej)", !civilServant))
                 .append("</div>");
 
-        h.append("<h3>Dane oceniającego</h3>").append(personTable(d.evaluator(), "Stanowisko"))
-                .append(signature(c.getPlace(), c.getEvaluatedOn(), "podpis oceniającego"))
+        h.append("<h3>Dane oceniającego</h3>").append(personTable(d.signingEvaluator(), "Stanowisko"));
+        if (d.signedBySubstitute()) {
+            h.append("<p class=\"muted\">Ocenę sporządzono w zastępstwie: ").append(esc(d.evaluator().getFullName()))
+                    .append("</p>");
+        }
+        h.append(signature(c.getPlace(), c.getEvaluatedOn(), signerName(d.signingEvaluator(), c.getEvaluatedOn()),
+                        "oceniającego"))
                 .append("<p>Przeprowadzono ze mną rozmowę oceniającą oraz zapoznałem(-łam) się z oceną okresową i wnioskami ")
                 .append("dotyczącymi indywidualnego programu rozwoju zawodowego.</p>");
         if (c.getRefusalDate() != null) {
@@ -265,7 +272,7 @@ public class SheetHtmlRenderer {
         h.append(box("Umotywowanie wniosku", d.gradeRequest().motivation()));
         h.append("<div class=\"sign\">").append(field(esc(d.cycle().getPlace()), "miejscowość"))
                 .append(field(date(d.cycle().getEvaluatedOn()), "data (dd.mm.rrrr)"))
-                .append(field(esc(d.evaluator().getFullName()), "imię i nazwisko lub pieczątka oceniającego"))
+                .append(field(esc(d.signingEvaluator().getFullName()), "imię i nazwisko lub pieczątka oceniającego"))
                 .append(field("", "podpis oceniającego")).append("</div>");
     }
 
@@ -318,9 +325,14 @@ public class SheetHtmlRenderer {
         return space > 0 ? full.substring(space + 1) : "";
     }
 
-    private static String signature(String place, LocalDate date, String who) {
+    private static String signature(String place, LocalDate date, String escapedName, String whose) {
         return "<div class=\"sign\">" + field(esc(place), "miejscowość") + field(date(date), "data (dd.mm.rrrr)")
-                + field("", who) + "</div>";
+                + field(escapedName, "imię i nazwisko lub pieczątka " + whose) + field("", "podpis " + whose) + "</div>";
+    }
+
+    /** Imię i nazwisko przy podpisie dopiero po czynności (jak przy zapoznaniu) — pusty arkusz zostaje do wypełnienia ręcznie. */
+    private static String signerName(User u, LocalDate signedOn) {
+        return signedOn != null && u != null ? esc(u.getFullName()) : "";
     }
 
     /** Pole podpisu: wartość wyśrodkowana nad kropkowaną linią, podpis pola pod nią (zamiast kropek w tekście). */

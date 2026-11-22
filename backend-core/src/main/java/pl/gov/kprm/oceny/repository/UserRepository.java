@@ -28,7 +28,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     /** Czy rekord jest wskazywany przez dane procesu (wtedy anonimizacja zamiast usunięcia). */
     @Query(nativeQuery = true, value = """
-            select exists(select 1 from evaluation_cycles where employee_id = :id or evaluator_id = :id)
+            select exists(select 1 from evaluation_cycles where employee_id = :id or evaluator_id = :id or evaluated_by = :id)
                 or exists(select 1 from evaluation_history where user_id = :id or entered_by = :id)
                 or exists(select 1 from employee_notes where author_id = :id)
                 or exists(select 1 from audit_logs where actor_id = :id)

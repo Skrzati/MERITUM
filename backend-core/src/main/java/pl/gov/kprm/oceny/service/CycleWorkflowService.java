@@ -370,6 +370,7 @@ public class CycleWorkflowService {
         }
         if (target == CycleStatus.EVALUATION_DRAFT) {
             change(changes, "evaluatedOn", cycle.getEvaluatedOn(), null, cycle::setEvaluatedOn, true);
+            cycle.setEvaluatedBy(null);
             cycle.setAverageScore(null);
             cycle.setPerformanceLevel(null);
             cycle.setFinalResult(null);
@@ -544,6 +545,7 @@ public class CycleWorkflowService {
                             "delayReason", cycle.getDelayReason())));
         }
         cycle.setEvaluatedOn(today);
+        cycle.setEvaluatedBy(user.getId());
         if (cycle.getEvaluationInterviewDate() == null) {
             cycle.setEvaluationInterviewDate(today);
         }
@@ -657,6 +659,7 @@ public class CycleWorkflowService {
             LocalDate previousDue = cycle.getDueDate();
             cycle.setEvaluatedOn(null);
             cycle.setAcknowledgedAt(null);
+            cycle.setEvaluatedBy(null);
             cycle.setAppealDeadline(null);
             // nowa rozmowa oceniająca: .ics liczony od nowego terminu (SEQUENCE = appealRound), powiadomienia w locie
             cycle.setEvaluationInterviewDate(null);

@@ -62,7 +62,8 @@ public class PdfExportService {
         return new SheetData(
                 offices.findById(c.getOfficeId()).orElseThrow(() -> notFound("Urząd", c.getOfficeId())),
                 user(c.getEmployeeId()), user(c.getEvaluatorId()), c, criteria, scores, grade,
-                history.previousEvaluation(c).orElse(null), iprzItems.findByCycleIdOrderByIdAsc(c.getId()));
+                history.previousEvaluation(c).orElse(null), iprzItems.findByCycleIdOrderByIdAsc(c.getId()),
+                c.getEvaluatedBy() == null ? null : user(c.getEvaluatedBy()));
     }
 
     private User user(Long id) {

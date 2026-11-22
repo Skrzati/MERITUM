@@ -60,6 +60,7 @@ public class EvaluationCycle {
     private LocalDate criteriaConfirmedOn;
     private LocalDate evaluationInterviewDate;
     private LocalDate evaluatedOn;
+    private Long evaluatedBy;
     private String place;
     private LocalDate appealDecisionDeadline;
     private String delayReason;
