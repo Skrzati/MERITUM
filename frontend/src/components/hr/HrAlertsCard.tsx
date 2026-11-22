@@ -1,16 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { Alert, Badge, Card, ProblemAlert, Spinner } from "@/components/ui";
+import { Alert, Card, ProblemAlert, Spinner, StatusBadge } from "@/components/ui";
 import { api } from "@/lib/api";
 import { EMPLOYMENT_STATUS_LABEL, formatDate } from "@/lib/labels";
 import type { HrAlert } from "@/lib/types";
 import { useAsync } from "@/lib/useAsync";
 
 const TYPE_LABEL: Record<HrAlert["type"], string> = {
-  TWO_NEGATIVE_TERMINATION: "Dwie oceny negatywne — rozwiązanie stosunku pracy",
-  TWO_NEGATIVE_INFO: "Dwie oceny negatywne — informacja",
-  MANDATORY_GRADE: "Obligatoryjny kolejny stopień",
+  TWO_NEGATIVE_TERMINATION: "Dwie kolejne oceny negatywne — rozwiązanie stosunku pracy (art. 71 ust. 1 pkt 1)",
+  TWO_NEGATIVE_INFO: "Dwie kolejne oceny negatywne — informacja dla kadr",
+  MANDATORY_GRADE: "Obligatoryjny kolejny stopień służbowy (art. 89 ust. 2)",
 };
 
 /** Alerty kadrowe z historii ocen (GET /api/hr/alerts) — backend wylicza skutki wg statusu zatrudnienia. */
@@ -26,7 +26,7 @@ export function HrAlertsCard({ reloadKey }: { reloadKey?: unknown }) {
           {alerts.data.map((a) => (
             <li key={`${a.employeeId}-${a.type}`} className="py-3 text-sm">
               <div className="flex flex-wrap items-center gap-2">
-                <Badge tone={a.severity === "CRITICAL" ? "red" : "blue"}>{a.severity === "CRITICAL" ? "krytyczny" : "informacyjny"}</Badge>
+                <StatusBadge status={a.severity === "CRITICAL" ? "err" : "info"}>{a.severity === "CRITICAL" ? "krytyczny" : "informacyjny"}</StatusBadge>
                 <span className="font-bold text-gov-text">{a.employeeName}</span>
                 <span className="text-slate-600">{EMPLOYMENT_STATUS_LABEL[a.employmentStatus]}</span>
               </div>

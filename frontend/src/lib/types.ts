@@ -14,7 +14,10 @@ export type CycleStatus =
 export type PerformanceLevel = "SIGNIFICANTLY_BELOW" | "BELOW" | "MEETS" | "ABOVE" | "SIGNIFICANTLY_ABOVE";
 export type Outcome = "POSITIVE" | "NEGATIVE";
 export type DgDecision = "CHANGE" | "REDO";
-export type SignatureMethod = "MOBYWATEL_QES" | "PAPER_HYBRID" | "SYSTEM_DEMO";
+/** Trzy tryby podpisu; MOBYWATEL_QES / PAPER_HYBRID / SYSTEM_DEMO — dawne wartości (backend mapuje je przez mode()). */
+export type SignatureMode = "QUALIFIED_OR_TRUSTED" | "INTERNAL_AUDIT_STAMP" | "HYBRID_PAPER_SCAN";
+export type SignatureMethod = SignatureMode | "MOBYWATEL_QES" | "PAPER_HYBRID" | "SYSTEM_DEMO";
+export type DifficultScenario = "SCORE_DROP" | "NEGATIVE_EVALUATION" | "OVERLOAD_SIGNALS";
 export type RescheduleMode = "EVALUATOR_CHANGE" | "EMPLOYEE_ABSENCE" | "EVALUATOR_ABSENCE" | "EMPLOYEE_REQUEST";
 export type RescheduleStatus = "PENDING" | "APPLIED" | "REJECTED";
 export type ScopeChangeOutcome = "NONE" | "CRITERIA_RESET" | "EVALUATION_REQUIRED";
@@ -54,6 +57,8 @@ export interface User {
   jobDescription?: string | null;
   /** Data nawiązania stosunku pracy — retencja akt: po 31.12.2018 10 lat, wcześniej / brak daty 50 lat. */
   employmentStartDate?: string | null;
+  /** Role łączone w małym urzędzie (np. DG + EVALUATOR + HR); KPRM_ADMIN nie może być rolą dodatkową. */
+  secondaryRoles?: Role[];
 }
 
 export type HistorySourceType = "SYSTEM" | "HISTORICAL" | "MANUAL";
@@ -185,6 +190,48 @@ export interface Cycle {
   appealAllowed: boolean;
   /** Dane pomocnicze (notatki robocze, ankiety) usunięte po zamknięciu cyklu — arkusz pozostaje w części B akt. */
   workingNotesPurgedAt: string | null;
+  /** Kod kryterium → ustalone oczekiwania na poziomie 5 pkt (§ 5 ust. 1 pkt 3). */
+  criteriaExpectations: Record<string, string> | null;
+  /** SHA-256 treści arkusza w chwili zapoznania. */
+  signatureHash: string | null;
+  /** Kod weryfikacyjny drukowany na PDF. */
+  signatureVerificationCode: string | null;
+  signedAt: string | null;
+  paperSignedOn: string | null;
+  scanReference: string | null;
+}
+
+/** Prywatny dziennik pracownika — widoczny wyłącznie dla właściciela, poza aktami i EZD. */
+export interface EmployeePrivateNote {
+  id: number;
+  cycleId: number | null;
+  content: string;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+export interface IprzSummary {
+  approvedPlans: number;
+  byCriterion: { criterionCode: string; criterionName: string; actions: number; employees: number }[];
+  byFormType: Partial<Record<IprzFormType, number>>;
+  topActions: { actionTitle: string; count: number }[];
+}
+
+export interface DepartmentCalibration {
+  department: string;
+  evaluations: number;
+  averageScore: number | null;
+  levels: Partial<Record<PerformanceLevel, AnonymizedCount>>;
+  positive: AnonymizedCount;
+  negative: AnonymizedCount;
+}
+
+export interface Calibration {
+  kAnonymity: number;
+  year: number | null;
+  departments: DepartmentCalibration[];
+  suppressedDepartments: number;
+  officeAverage: number | null;
 }
 
 export interface SelfPrep {
@@ -294,7 +341,8 @@ export interface NotificationItem {
     | "APPEAL_DECIDED"
     | "HR_CRITICAL_ALERT"
     | "HR_INFO_ALERT"
-    | "PRE_INTERVIEW_SURVEY_SENT";
+    | "PRE_INTERVIEW_SURVEY_SENT"
+    | "PRE_INTERVIEW_SURVEY_OPEN";
   severity: "HIGH" | "MEDIUM" | "LOW";
   cycleId: number | null;
   dueDate: string | null;
@@ -332,6 +380,15 @@ export interface PreInterviewSurvey {
   allowCustom: boolean;
   /** false — przełożony przed wysłaniem albo kadry: odpowiedzi ukryte. */
   answersVisible: boolean;
+  /** false — przełożony nie udostępnił jeszcze ankiety (oceniany dostaje pustą listę pytań). */
+  open: boolean;
+  /** Od tego dnia oceniany widzi ankietę; null — nieudostępniona. */
+  opensOn: string | null;
+  answerDeadline: string | null;
+  /** Wstęp od przełożonego wyświetlany ocenianemu nad pytaniami. */
+  introMessage: string | null;
+  /** true — bieżący użytkownik (przełożony / zastępca) może ustalić termin udostępnienia. */
+  canSchedule: boolean;
   questions: SurveyQuestion[];
 }
 
@@ -467,7 +524,16 @@ export interface ImportResult {
   errors: string[];
 }
 
-export type AiMode = "LIVE" | "MOCK" | "MOCK_FALLBACK";
+export type AiMode = "LIVE" | "MOCK" | "MOCK_FALLBACK" | "RULES";
+
+/** complianceMeta z każdej odpowiedzi /api/ai/* (AI Act, zał. III pkt 4). */
+export interface ComplianceMeta {
+  piiAnonymized: boolean;
+  redactedCount: number;
+  humanInTheLoopRequired: boolean;
+  advisoryOnly: boolean;
+  disclaimer: string;
+}
 
 export interface SocraticResponse {
   masked_prompt: string;
@@ -475,6 +541,7 @@ export interface SocraticResponse {
   draft_justification: string;
   ai_disclaimer: string;
   mode: AiMode;
+  complianceMeta?: ComplianceMeta;
 }
 
 export interface ConsistencyWarning {
@@ -486,6 +553,7 @@ export interface ConsistencyWarning {
 export interface ConsistencyResponse {
   warnings: ConsistencyWarning[];
   auto_modified: boolean;
+  complianceMeta?: ComplianceMeta;
 }
 
 export interface HrPartnerResponse {
@@ -496,6 +564,7 @@ export interface HrPartnerResponse {
   appreciation_moment: string;
   ai_disclaimer: string;
   mode: AiMode;
+  complianceMeta?: ComplianceMeta;
 }
 
 export interface Problem {
@@ -518,6 +587,7 @@ export interface SuggestCriteriaResponse {
   suggestions: CriterionSuggestion[];
   ai_disclaimer: string;
   mode: AiMode;
+  complianceMeta?: ComplianceMeta;
 }
 
 export interface InterviewPrepResponse {
@@ -526,7 +596,48 @@ export interface InterviewPrepResponse {
   goal: string;
   agenda: { topic: string; legal_basis: string; questions: string[] }[];
   difficult_situations: { situation: string; tip: string }[];
-  development_catalog: { criterion: string; actions: string[] }[];
+  development_catalog: DevelopmentEntry[];
+  difficult_conversation: DifficultConversation | null;
   ai_disclaimer: string;
   mode: AiMode;
+  complianceMeta?: ComplianceMeta;
+}
+
+/** Działania rozwojowe w modelu 70-20-10; wewnętrzne działania mają koszt 0 zł. */
+export interface DevelopmentEntry {
+  criterion: string;
+  actions: string[];
+  estimatedCostPln: number;
+  onTheJob70: string[];
+  social20: string[];
+  formal10: string[];
+}
+
+/** Stała karta trudnej rozmowy (bez LLM): struktura, pytania i granice roli przełożonego. */
+export interface DifficultConversation {
+  scenario: DifficultScenario;
+  title: string;
+  structure: string[];
+  questions: string[];
+  role_boundaries: string[];
+}
+
+export interface AppreciationResponse {
+  masked_prompt: string;
+  situation: string;
+  behavior: string;
+  impact: string;
+  message: string;
+  ai_disclaimer: string;
+  mode: AiMode;
+  complianceMeta?: ComplianceMeta;
+}
+
+export interface TeamMentoringResponse {
+  masked_prompt: string;
+  pairs: { mentor: string; mentee: string; criterion: string; rationale: string }[];
+  unmatched: { mentee: string; criterion: string }[];
+  ai_disclaimer: string;
+  mode: AiMode;
+  complianceMeta?: ComplianceMeta;
 }

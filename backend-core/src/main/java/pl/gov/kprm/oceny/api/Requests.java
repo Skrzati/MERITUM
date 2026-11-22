@@ -174,6 +174,10 @@ public final class Requests {
     public record SurveyQuestionRequest(@NotBlank @Size(max = 500) String text) {
     }
 
+    /** {@code opensOn = null} — ankieta niewidoczna dla ocenianego; data bieżąca lub wcześniejsza — udostępniona od razu. */
+    public record SurveySettingsRequest(LocalDate opensOn, LocalDate answerDeadline, @Size(max = 2000) String introMessage) {
+    }
+
     public record SurveyAnswersRequest(@NotNull Map<String, @Size(max = 5000) String> answers) {
     }
 

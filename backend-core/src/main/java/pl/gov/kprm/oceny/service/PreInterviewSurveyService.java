@@ -13,6 +13,7 @@ import pl.gov.kprm.oceny.repository.SchemaVersionRepository;
 import pl.gov.kprm.oceny.rules.RuleViolationException;
 
 import java.time.Clock;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.*;
 
@@ -50,9 +51,13 @@ public class PreInterviewSurveyService {
         }
     }
 
-    /** {@code answersVisible = false} — przełożony przed wysłaniem albo kadry: pytania bez odpowiedzi. */
+    /**
+     * {@code answersVisible = false} — przełożony przed wysłaniem albo kadry: pytania bez odpowiedzi.
+     * {@code open = false} — ankieta nieudostępniona: oceniany nie dostaje pytań (przełożony może je jeszcze zmieniać).
+     */
     public record SurveyView(Long cycleId, Status status, OffsetDateTime sentAt, boolean allowCustom,
-                             boolean answersVisible, List<Question> questions) {
+                             boolean answersVisible, boolean open, LocalDate opensOn, LocalDate answerDeadline,
+                             String introMessage, boolean canSchedule, List<Question> questions) {
     }
 
     @Transactional(readOnly = true)
@@ -60,12 +65,51 @@ public class PreInterviewSurveyService {
         EvaluationCycle cycle = workflow.get(cycleId, user);
         Role access = accessOf(cycle, user);
         PreInterviewSurvey survey = surveys.findByCycleId(cycleId).orElseGet(() -> fresh(cycle));
+        boolean open = survey.isOpen(LocalDate.now(clock));
         boolean answersVisible = access == Role.EVALUATED
                 || (access == Role.EVALUATOR && survey.getStatus() == Status.SENT);
-        List<Question> questions = questions(survey).stream()
+        List<Question> questions = access == Role.EVALUATED && !open ? List.of() : questions(survey).stream()
                 .map(q -> answersVisible ? q : q.withAnswer(null)).toList();
         return new SurveyView(cycleId, survey.getStatus(), survey.getSentAt(), allowCustom(cycle), answersVisible,
+                open, survey.getOpensOn(), survey.getAnswerDeadline(), survey.getIntroMessage(),
+                access == Role.EVALUATOR && cycle.getStatus().isActive() && survey.getStatus() != Status.SENT,
                 questions);
+    }
+
+    /**
+     * Przełożony (lub zastępca) decyduje, od kiedy oceniany widzi ankietę. Wycofanie udostępnienia jest możliwe,
+     * dopóki oceniany nie zapisał żadnej odpowiedzi.
+     */
+    public SurveyView schedule(Long cycleId, User user, LocalDate opensOn, LocalDate answerDeadline, String introMessage) {
+        EvaluationCycle cycle = workflow.get(cycleId, user);
+        if (accessOf(cycle, user) != Role.EVALUATOR) {
+            throw forbidden("Termin udostępnienia ankiety ustala przełożony");
+        }
+        PreInterviewSurvey survey = editable(cycle);
+        List<String> violations = new ArrayList<>();
+        if (answerDeadline != null && opensOn == null) {
+            violations.add("Termin odpowiedzi wymaga daty udostępnienia ankiety");
+        }
+        if (answerDeadline != null && opensOn != null && answerDeadline.isBefore(opensOn)) {
+            violations.add("Termin odpowiedzi nie może być wcześniejszy niż data udostępnienia");
+        }
+        if (opensOn == null && questions(survey).stream().anyMatch(q -> q.answer() != null)) {
+            violations.add("Oceniany zaczął wypełniać ankietę — nie można wycofać jej udostępnienia");
+        }
+        if (!violations.isEmpty()) {
+            throw new RuleViolationException(violations);
+        }
+        survey.setOpensOn(opensOn);
+        survey.setAnswerDeadline(answerDeadline);
+        survey.setIntroMessage(introMessage == null || introMessage.isBlank() ? null : introMessage.trim());
+        survey.setScheduledBy(user.getId());
+        save(survey, questions(survey));
+        Map<String, Object> details = new HashMap<>();
+        details.put("opensOn", opensOn == null ? null : opensOn.toString());
+        details.put("answerDeadline", answerDeadline == null ? null : answerDeadline.toString());
+        audit.log(user, cycle.getOfficeId(), "PRE_INTERVIEW_SURVEY_SCHEDULED", AuditService.CYCLE, cycleId,
+                workflow.auditPayload(user, cycle, details));
+        return view(cycleId, user);
     }
 
     /** Pytanie własne dodaje kadra lub przełożony (zastępca), dopóki oceniany nie wysłał ankiety. */
@@ -116,7 +160,7 @@ public class PreInterviewSurveyService {
         if (accessOf(cycle, user) != Role.EVALUATED) {
             throw forbidden("Ankietę wypełnia wyłącznie oceniany");
         }
-        PreInterviewSurvey survey = editable(cycle);
+        PreInterviewSurvey survey = openForEmployee(cycle);
         List<Question> updated = questions(survey).stream().map(q -> {
             String a = answers == null ? null : answers.get(q.id());
             if (a != null && a.length() > MAX_ANSWER_LENGTH) {
@@ -134,7 +178,7 @@ public class PreInterviewSurveyService {
         if (accessOf(cycle, user) != Role.EVALUATED) {
             throw forbidden("Ankietę wysyła wyłącznie oceniany");
         }
-        PreInterviewSurvey survey = editable(cycle);
+        PreInterviewSurvey survey = openForEmployee(cycle);
         if (questions(survey).stream().allMatch(q -> q.answer() == null)) {
             throw new RuleViolationException(List.of("Uzupełnij co najmniej jedną odpowiedź przed wysłaniem"));
         }
@@ -167,6 +211,14 @@ public class PreInterviewSurveyService {
         PreInterviewSurvey survey = surveys.findByCycleId(cycle.getId()).orElseGet(() -> fresh(cycle));
         if (survey.getStatus() == Status.SENT) {
             throw conflict("Ankieta została już wysłana przełożonemu");
+        }
+        return survey;
+    }
+
+    private PreInterviewSurvey openForEmployee(EvaluationCycle cycle) {
+        PreInterviewSurvey survey = editable(cycle);
+        if (!survey.isOpen(LocalDate.now(clock))) {
+            throw conflict("Przełożony jeszcze nie udostępnił ankiety");
         }
         return survey;
     }

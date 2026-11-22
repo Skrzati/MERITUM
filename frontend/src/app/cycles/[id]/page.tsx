@@ -23,8 +23,8 @@ import { useAsync } from "@/lib/useAsync";
 const TABS = [
   { id: "criteria", label: "1. Kryteria" },
   { id: "interview", label: "2. Rozmowy i IPRZ" },
-  { id: "notes", label: "3. Notatki i HR Partner" },
-  { id: "evaluation", label: "4. Ocena i Sokratejskie AI" },
+  { id: "notes", label: "3. Notatki i doradca HR" },
+  { id: "evaluation", label: "4. Ocena i asystent sokratejski" },
   { id: "changes", label: "5. Termin, zakres, korekta" },
   { id: "ack", label: "6. Zapoznanie, Podpis i PDF" },
 ] as const;

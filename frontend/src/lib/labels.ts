@@ -1,11 +1,24 @@
-import type { Cycle, CycleStatus, EmploymentStatus, EscalationLevel, Outcome, PerformanceLevel, Role, SheetType, User } from "./types";
+import type {
+  Cycle,
+  CycleStatus,
+  DifficultScenario,
+  EmploymentStatus,
+  EscalationLevel,
+  Outcome,
+  PerformanceLevel,
+  Role,
+  SheetType,
+  SignatureMethod,
+  SignatureMode,
+  User,
+} from "./types";
 
 export const ROLE_LABEL: Record<Role, string> = {
   EVALUATOR: "Kierownik",
   EVALUATED: "Oceniany",
   HR: "Kadry",
   DG: "Dyrektor Generalny",
-  KPRM_ADMIN: "Admin KPRM",
+  KPRM_ADMIN: "Administracja KPRM",
 };
 
 export const ROLE_ORDER: Role[] = ["EVALUATOR", "EVALUATED", "HR", "DG", "KPRM_ADMIN"];
@@ -14,7 +27,7 @@ export const STATUS_LABEL: Record<CycleStatus, string> = {
   DRAFT_CRITERIA: "Ustalanie kryteriów",
   CRITERIA_CONFIRMED: "Kryteria potwierdzone",
   OBSERVATION: "Obserwacja",
-  EVALUATION_DRAFT: "Szkic oceny",
+  EVALUATION_DRAFT: "Wersja robocza oceny",
   AWAITING_ACK: "Oczekuje na zapoznanie",
   COMPLETED: "Zakończona",
   APPEALED: "Sprzeciw",
@@ -74,6 +87,41 @@ export const PROCESS_STEPS: { status: CycleStatus; label: string }[] = [
 ];
 
 export type Tone = "slate" | "blue" | "amber" | "green" | "red";
+
+/** Status prawny rozmów: rozpoczynająca i oceniająca wynikają z ustawy, bieżąca — ze standardów ZZL. */
+export const INTERVIEW_LEGAL_STATUS = {
+  mandatory: "Obowiązkowe (ustawa o SC)",
+  recommended: "Zalecany standard ZZL (Zarządzenie nr 6 Szefa SC — nieobowiązkowe)",
+} as const;
+
+export const SIGNATURE_MODE_LABEL: Record<SignatureMode, { label: string; hint: string }> = {
+  QUALIFIED_OR_TRUSTED: {
+    label: "Podpis kwalifikowany, zaufany (Profil Zaufany) lub w mObywatelu",
+    hint: "Podpis elektroniczny równoważny własnoręcznemu — w wersji demonstracyjnej symulowany.",
+  },
+  INTERNAL_AUDIT_STAMP: {
+    label: "Potwierdzenie w systemie (pieczęć wewnętrzna)",
+    hint: "Skrót SHA-256 treści arkusza i znacznik czasu zapisane w rejestrze zdarzeń.",
+  },
+  HYBRID_PAPER_SCAN: {
+    label: "Tryb hybrydowy — wydruk z kodem weryfikacyjnym i podpis odręczny",
+    hint: "Wydrukuj arkusz, podpisz odręcznie, wpisz datę podpisu i (opcjonalnie) numer skanu w EZD.",
+  },
+};
+
+/** Dawne wartości API odwzorowane na tryb podpisu (jak SignatureMethod.mode() w backendzie). */
+export function signatureMode(method: SignatureMethod): SignatureMode {
+  if (method === "MOBYWATEL_QES") return "QUALIFIED_OR_TRUSTED";
+  if (method === "PAPER_HYBRID") return "HYBRID_PAPER_SCAN";
+  if (method === "SYSTEM_DEMO") return "INTERNAL_AUDIT_STAMP";
+  return method;
+}
+
+export const DIFFICULT_SCENARIO_LABEL: Record<DifficultScenario, string> = {
+  SCORE_DROP: "Spadek ocen względem poprzedniego okresu",
+  NEGATIVE_EVALUATION: "Ocena negatywna",
+  OVERLOAD_SIGNALS: "Sygnały przeciążenia pracą",
+};
 
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";

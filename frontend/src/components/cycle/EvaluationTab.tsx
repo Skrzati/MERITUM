@@ -1,10 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { AiDisclaimer, Alert, Badge, Button, Card, Field, inputClass, MaskedPrompt, ModeBadge, ProblemAlert } from "@/components/ui";
+import {
+  AiComplianceBadge,
+  AiDisclaimer,
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Field,
+  inputClass,
+  MaskedPrompt,
+  ModeBadge,
+  ProblemAlert,
+  VisibilityBanner,
+} from "@/components/ui";
 import { useUser } from "@/components/UserProvider";
 import { api, coreAi } from "@/lib/api";
-import { formatDate, LEVEL_LABEL, MAX_CIVIL_SERVICE_GRADE, OUTCOME_LABEL, previewAverage } from "@/lib/labels";
+import { formatDate, INTERVIEW_LEGAL_STATUS, LEVEL_LABEL, MAX_CIVIL_SERVICE_GRADE, OUTCOME_LABEL, previewAverage } from "@/lib/labels";
 import type {
   ConsistencyResponse,
   EvaluationResponse,
@@ -12,6 +25,7 @@ import type {
   InterviewPrepResponse,
   Outcome,
   PerformanceLevel,
+  ScopeChange,
   SocraticResponse,
 } from "@/lib/types";
 import type { CycleView } from "./context";
@@ -19,6 +33,31 @@ import { DevelopmentCatalog, fetchInterviewPrep } from "./InterviewTab";
 import { ScorePicker } from "./ScorePicker";
 
 const EDITABLE = ["OBSERVATION", "EVALUATION_DRAFT"];
+const LOWEST_SCORE = 1;
+/** Zmiana zakresu obowiązków w tylu ostatnich dniach okresu — przypomnienie o okresie wdrożenia (RECENT_SCOPE_CHANGE). */
+const RECENT_SCOPE_CHANGE_DAYS = 90;
+const DAY_MS = 86_400_000;
+
+const WARNING_LABEL: Record<string, string> = {
+  CRITERIA_MISMATCH: "Niezgodność kryteriów",
+  FOREIGN_NAME: "Obce imię lub nazwisko",
+  LEVEL_MISMATCH: "Niezgodny poziom",
+  AVERAGE_MISMATCH: "Niezgodna średnia",
+  DUPLICATE_TEXT: "Powtórzony tekst",
+  GENDER_MISMATCH: "Niezgodna forma gramatyczna",
+  RECENCY_BIAS: "Efekt świeżości (notatki głównie z końca okresu)",
+  RECENT_SCOPE_CHANGE: "Niedawna zmiana zakresu obowiązków",
+};
+
+async function recentScopeChange(cycleId: number, periodEnd: string): Promise<boolean> {
+  try {
+    const changes = await api<ScopeChange[]>(`/api/cycles/${cycleId}/scope-changes`);
+    const from = Date.parse(periodEnd) - RECENT_SCOPE_CHANGE_DAYS * DAY_MS;
+    return changes.some((c) => Date.parse(c.changeDate) >= from);
+  } catch {
+    return false;
+  }
+}
 
 export function EvaluationTab({ view, onOpenInterview }: { view: CycleView; onOpenInterview: () => void }) {
   const { cycle, notes, employee, isEvaluator, refresh } = view;
@@ -52,6 +91,7 @@ export function EvaluationTab({ view, onOpenInterview }: { view: CycleView; onOp
   const [consistency, setConsistency] = useState<ConsistencyResponse | null>(null);
 
   const average = previewAverage(criteria.map((c) => scores[c.code]));
+  const lowestScored = criteria.filter((c) => scores[c.code] === LOWEST_SCORE);
 
   const run = async (key: string, fn: () => Promise<void>) => {
     setBusy(key);
@@ -120,6 +160,9 @@ export function EvaluationTab({ view, onOpenInterview }: { view: CycleView; onOp
             level: null,
             justification,
             grade_request_text: civilServant && !highestGrade && gradeRequested ? motivation : null,
+            notes: (notes ?? []).map((n) => ({ date: n.createdAt.slice(0, 10), text: n.content })),
+            periodEnd: cycle.dueDate,
+            recentScopeChange: await recentScopeChange(cycle.id, cycle.dueDate),
           },
         }),
       );
@@ -155,7 +198,28 @@ export function EvaluationTab({ view, onOpenInterview }: { view: CycleView; onOp
               {isEvaluator ? "Ocena jest zablokowana na tym etapie procesu." : "Podgląd — ocenę wypełnia oceniający."}
             </p>
           )}
-          <ScorePicker criteria={criteria} scores={scores} disabled={!editable} onChange={(code, v) => setScores((s) => ({ ...s, [code]: v }))} />
+          <ScorePicker
+            criteria={criteria}
+            scores={scores}
+            expectations={cycle.criteriaExpectations}
+            disabled={!editable}
+            onChange={(code, v) => setScores((s) => ({ ...s, [code]: v }))}
+          />
+          {lowestScored.length > 0 && (
+            <div className="mt-3">
+              <Alert tone="red" title={`1 pkt (znacznie poniżej oczekiwań): ${lowestScored.map((c) => c.name).join(", ")}`}>
+                <ul className="list-disc space-y-1 pl-5">
+                  <li>Ocena 1 pkt w dowolnym kryterium oznacza ocenę negatywną — uzasadnienie jest obowiązkowe.</li>
+                  <li>Po ocenie negatywnej przeprowadza się ponowną ocenę po 6 miesiącach (art. 81 ust. 9).</li>
+                  {employee?.employmentStatus === "URZEDNIK_SC" && (
+                    <li>
+                      <strong>Urzędnik SC:</strong> dwie kolejne oceny negatywne oznaczają rozwiązanie stosunku pracy (art. 71 ust. 1 pkt 1).
+                    </li>
+                  )}
+                </ul>
+              </Alert>
+            </div>
+          )}
           <p className="mt-2 text-xs text-slate-600">
             Wynik wiążący (poziom, ocena pozytywna/negatywna) wylicza silnik reguł § 11 po zatwierdzeniu. Ocena 1 pkt w dowolnym kryterium oznacza ocenę negatywną.
           </p>
@@ -163,6 +227,7 @@ export function EvaluationTab({ view, onOpenInterview }: { view: CycleView; onOp
 
         <Card title="Uzasadnienie i IPRZ">
           <div className="space-y-4">
+            <VisibilityBanner kind="official" />
             <Field label="Uzasadnienie oceny" hint="Obowiązkowe przy ocenie negatywnej.">
               <textarea className={inputClass} rows={6} value={justification} disabled={!editable} onChange={(e) => setJustification(e.target.value)} />
             </Field>
@@ -170,7 +235,7 @@ export function EvaluationTab({ view, onOpenInterview }: { view: CycleView; onOp
               <textarea className={inputClass} rows={3} value={iprz} disabled={!editable} onChange={(e) => setIprz(e.target.value)} />
             </Field>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Data rozmowy oceniającej (§ 10)">
+              <Field label="Data rozmowy oceniającej (§ 10)" hint={INTERVIEW_LEGAL_STATUS.mandatory}>
                 <input type="date" className={inputClass} value={interviewDate} disabled={!editable} onChange={(e) => setInterviewDate(e.target.value)} />
               </Field>
               {overdue && (
@@ -247,7 +312,7 @@ export function EvaluationTab({ view, onOpenInterview }: { view: CycleView; onOp
         {editable && (
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={() => evaluate(false)} busy={busy === "draft"}>
-              Zapisz szkic
+              Zapisz wersję roboczą
             </Button>
             <Button onClick={() => evaluate(true)} busy={busy === "submit"}>
               Zatwierdź ocenę
@@ -255,7 +320,7 @@ export function EvaluationTab({ view, onOpenInterview }: { view: CycleView; onOp
           </div>
         )}
         <ProblemAlert error={error} />
-        {draftSaved && !error && <Alert tone="green">Szkic zapisany.</Alert>}
+        {draftSaved && !error && <Alert tone="green">Wersja robocza zapisana.</Alert>}
         {(result || cycle.resultExplanation) && !error && <ResultBox result={result} fallback={cycle} />}
       </div>
 
@@ -292,6 +357,7 @@ export function EvaluationTab({ view, onOpenInterview }: { view: CycleView; onOp
                   </Button>
                 )}
               </div>
+              <AiComplianceBadge meta={socratic.complianceMeta} />
               <AiDisclaimer text={socratic.ai_disclaimer} />
               <MaskedPrompt prompt={socratic.masked_prompt} />
             </div>
@@ -314,6 +380,7 @@ export function EvaluationTab({ view, onOpenInterview }: { view: CycleView; onOp
             {iprzPrep && (
               <div className="mt-4 space-y-3">
                 <DevelopmentCatalog entries={iprzPrep.development_catalog} actionLabel={() => "Dopisz do IPRZ"} onPick={appendIprz} />
+                <AiComplianceBadge meta={iprzPrep.complianceMeta} />
                 <AiDisclaimer text={iprzPrep.ai_disclaimer} />
               </div>
             )}
@@ -341,14 +408,20 @@ export function EvaluationTab({ view, onOpenInterview }: { view: CycleView; onOp
                 <ul className="space-y-2">
                   {consistency.warnings.map((w, i) => (
                     <li key={i}>
-                      <Alert tone={w.severity === "ERROR" ? "red" : "amber"} title={`${w.severity === "ERROR" ? "Błąd" : "Ostrzeżenie"} · ${w.code}`}>
+                      <Alert
+                        tone={w.severity === "ERROR" ? "red" : "amber"}
+                        title={`${w.severity === "ERROR" ? "Błąd" : "Ostrzeżenie"} · ${WARNING_LABEL[w.code] ?? w.code}`}
+                      >
                         {w.message}
                       </Alert>
                     </li>
                   ))}
                 </ul>
               )}
-              <p className="text-xs text-slate-600">Kontrola nie zmienia treści arkusza (auto_modified: {String(consistency.auto_modified)}).</p>
+              <AiComplianceBadge meta={consistency.complianceMeta} />
+              <p className="text-xs text-slate-600">
+                Kontrola regułowa (bez modelu AI) — {consistency.auto_modified ? "zmieniła" : "nie zmienia"} treści arkusza.
+              </p>
             </div>
           )}
         </Card>

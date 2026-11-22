@@ -44,6 +44,8 @@ interface Draft {
   periodMonths: number;
   maxAdditional: number;
   allowCustom: boolean;
+  /** config.preInterviewSurvey.allowCustom — pytania własne przełożonego w ankiecie przed rozmową. */
+  surveyAllowCustom: boolean;
   rows: CriterionRow[];
   deadlines: Record<DeadlineKey, number>;
   thresholds: number[];
@@ -72,6 +74,7 @@ function draftFrom(schema: Schema): Draft {
     periodMonths: schema.periodMonths,
     maxAdditional: c.criteriaRules?.maxAdditional ?? DEFAULT_MAX_ADDITIONAL,
     allowCustom: c.criteriaRules?.allowCustom ?? false,
+    surveyAllowCustom: (c.preInterviewSurvey as { allowCustom?: boolean } | undefined)?.allowCustom ?? true,
     rows: (c.criteria ?? []).map((k) => ({
       code: k.code,
       name: k.name,
@@ -87,6 +90,7 @@ function configFrom(base: SchemaConfig, d: Draft): SchemaConfig {
   return {
     ...base,
     criteriaRules: { ...base.criteriaRules, maxAdditional: d.maxAdditional, allowCustom: d.allowCustom },
+    preInterviewSurvey: { ...(base.preInterviewSurvey as Record<string, unknown> | undefined), allowCustom: d.surveyAllowCustom },
     criteria: d.rows.map((r) => {
       const description = r.description.split("\n").map((l) => l.trim()).filter(Boolean);
       return description.length ? { code: r.code, name: r.name.trim(), description } : { code: r.code, name: r.name.trim() };
@@ -108,7 +112,9 @@ function SchemaAdmin() {
   const cycles = useAsync(() => api<Cycle[]>("/api/cycles"), [current?.id]);
   const cyclesBySchema = (id: number) => (cycles.data ?? []).filter((c) => c.schemaVersionId === id).length;
 
-  const latest = schemas.data?.[0];
+  const [baseId, setBaseId] = useState<number | null>(null);
+  // „latest” = wersja bazowa kreatora: domyślnie najnowsza (np. v2), można wybrać dowolną wcześniejszą
+  const latest = schemas.data?.find((s) => s.id === baseId) ?? schemas.data?.[0];
   const [draft, setDraft] = useState<Draft | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -165,7 +171,7 @@ function SchemaAdmin() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gov-text">Prawo jako kod</h1>
+        <h1 className="text-2xl font-bold text-gov-text">Administracja — prawo jako kod</h1>
         <p className="text-sm text-slate-700">Wersjonowane schematy oceny. Istniejące cykle zachowują swoją wersję schematu (§ 13).</p>
       </div>
 
@@ -220,6 +226,26 @@ function SchemaAdmin() {
             Formularz wypełniony na podstawie wersji <Badge tone="blue">{latest.versionCode}</Badge>. Zmiany obejmą wyłącznie nowe
             cykle; serwer waliduje katalog i kryteria obowiązkowe przed zapisem.
           </p>
+          <div className="mb-4 max-w-sm">
+            <Field label="Wersja bazowa" hint="Wersje są niezmienne — edycja tworzy nową wersję na podstawie wybranej.">
+              <select
+                className={inputClass}
+                value={latest.id}
+                onChange={(e) => {
+                  const base = schemas.data?.find((s) => s.id === Number(e.target.value));
+                  if (!base) return;
+                  setBaseId(base.id);
+                  setDraft(draftFrom(base));
+                }}
+              >
+                {(schemas.data ?? []).map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.versionCode} (od {formatDate(s.effectiveFrom)})
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <Field label="Kod wersji">
               <input className={inputClass} value={draft.versionCode} onChange={(e) => update({ versionCode: e.target.value })} />
@@ -253,6 +279,15 @@ function SchemaAdmin() {
                 onChange={(e) => update({ allowCustom: e.target.checked })}
               />
               Zezwól na kryteria własne
+            </label>
+            <label className="flex items-center gap-2 self-end pb-2 text-sm font-semibold text-gov-text">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-navy-700"
+                checked={draft.surveyAllowCustom}
+                onChange={(e) => update({ surveyAllowCustom: e.target.checked })}
+              />
+              Pytania własne przełożonego w ankiecie przed rozmową
             </label>
           </div>
 

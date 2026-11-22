@@ -18,7 +18,7 @@ export default function TeamPage() {
 
 type Signal = TeamOverview["signals"][number];
 
-/** Twarde fakty z bazy → workload_signals dla Wirtualnego HR Partnera (bez szacowania przez AI). */
+/** Twarde fakty z bazy → workload_signals dla wirtualnego doradcy HR (bez szacowania przez AI). */
 function workloadSignals(s: Signal): Record<string, number> {
   const out: Record<string, number> = {
     absence_days: s.absenceDays6m,
@@ -61,7 +61,7 @@ function Team() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gov-text">Mój zespół — Wirtualny HR Partner</h1>
+      <h1 className="text-2xl font-bold text-gov-text">Mój zespół — wirtualny doradca HR</h1>
       {team.loading && <Spinner />}
       <ProblemAlert error={team.error} />
       {t && t.competencies.length === 0 && <Alert tone="slate">Brak podwładnych ani zastępowanych cykli.</Alert>}
@@ -112,7 +112,7 @@ function Team() {
           <div className="grid gap-6 lg:grid-cols-2">
             <Card title="Sugestie mentoringu wewnętrznego">
               {t.mentoring.length === 0 ? (
-                <p className="text-sm text-slate-700">Brak par mentor (7–9 pkt) — mentee (≤ 5 pkt) w tym samym kryterium.</p>
+                <p className="text-sm text-slate-700">Brak par mentor (7–9 pkt) — osoba wspierana (≤ 5 pkt) w tym samym kryterium.</p>
               ) : (
                 <ul className="space-y-2 text-sm">
                   {t.mentoring.map((p) => (
@@ -134,7 +134,7 @@ function Team() {
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <strong>{s.fullName}</strong>
                         <Button variant="ai" busy={busy === s.employeeId} onClick={() => analyze(s)}>
-                          HR Partner
+                          Doradca HR
                         </Button>
                       </div>
                       <p className="mt-1 text-xs text-slate-700">

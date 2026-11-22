@@ -138,8 +138,9 @@ export function wasLoggedOut(): boolean {
   return read(LOGGED_OUT_KEY) === "1";
 }
 
-/** Wywołanie AI przez backend-core (audyt AI Act art. 26). */
-export const coreAi = (operation: string, cycleId: number) => `/api/core-ai/${operation}?cycleId=${cycleId}`;
+/** Wywołanie AI przez backend-core (audyt AI Act art. 26); bez cycleId — operacje zespołowe (np. team-mentoring). */
+export const coreAi = (operation: string, cycleId?: number) =>
+  cycleId === undefined ? `/api/core-ai/${operation}` : `/api/core-ai/${operation}?cycleId=${cycleId}`;
 
 /** Pobiera plik (np. PDF) z nagłówkiem uwierzytelnienia i zapisuje go w przeglądarce. */
 export async function download(path: string, filename: string): Promise<void> {

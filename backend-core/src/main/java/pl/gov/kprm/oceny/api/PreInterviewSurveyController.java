@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import pl.gov.kprm.oceny.api.Requests.SurveyAnswersRequest;
 import pl.gov.kprm.oceny.api.Requests.SurveyQuestionRequest;
+import pl.gov.kprm.oceny.api.Requests.SurveySettingsRequest;
 import pl.gov.kprm.oceny.auth.CurrentUser;
 import pl.gov.kprm.oceny.domain.User;
 import pl.gov.kprm.oceny.service.PreInterviewSurveyService;
@@ -20,6 +21,12 @@ public class PreInterviewSurveyController {
     @GetMapping
     public SurveyView get(@PathVariable Long id, @CurrentUser User user) {
         return surveys.view(id, user);
+    }
+
+    /** Przełożony: kiedy ankieta ma się pojawić u ocenianego, termin odpowiedzi i wstęp. */
+    @PutMapping("/settings")
+    public SurveyView settings(@PathVariable Long id, @CurrentUser User user, @Valid @RequestBody SurveySettingsRequest req) {
+        return surveys.schedule(id, user, req.opensOn(), req.answerDeadline(), req.introMessage());
     }
 
     @PostMapping("/questions")

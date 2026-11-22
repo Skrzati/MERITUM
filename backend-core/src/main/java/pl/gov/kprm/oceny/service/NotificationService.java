@@ -57,7 +57,9 @@ public class NotificationService {
         /** Kadry / kierownictwo: art. 71 ust. 1 pkt 1 (krytyczny) albo informacja o dwóch ocenach negatywnych. */
         HR_CRITICAL_ALERT, HR_INFO_ALERT,
         /** Oceniający: oceniany wysłał ankietę przygotowawczą przed rozmową. */
-        PRE_INTERVIEW_SURVEY_SENT
+        PRE_INTERVIEW_SURVEY_SENT,
+        /** Oceniany: przełożony udostępnił ankietę przed rozmową, a odpowiedzi nie zostały jeszcze wysłane. */
+        PRE_INTERVIEW_SURVEY_OPEN
     }
 
     public enum Severity { HIGH, MEDIUM, LOW }
@@ -91,6 +93,9 @@ public class NotificationService {
             if (asEvaluator || c.getEmployeeId().equals(user.getId())) {
                 appealDecided(c, who, today, ctx, result);
             }
+            if (c.getEmployeeId().equals(user.getId())) {
+                surveyOpen(c, today, ctx, result);
+            }
         }
         result.sort(Comparator.comparing(Notification::dueDate, Comparator.nullsLast(Comparator.naturalOrder())));
         return result;
@@ -112,7 +117,8 @@ public class NotificationService {
     private record Context(Map<Long, String> names, Map<Long, CycleHistory> histories, Map<Long, LocalDate> lastNote,
                            Map<Long, LocalDate> lastCheckin,
                            Set<Long> pendingReschedule, Map<Long, Boolean> officeHasDg, Set<Long> substituted,
-                           boolean officeStaff, Map<Long, LocalDate> surveySent) {
+                           boolean officeStaff, Map<Long, LocalDate> surveySent,
+                           Map<Long, PreInterviewSurvey> surveyDraft) {
     }
 
     private Context context(User user, List<EvaluationCycle> visible) {
@@ -130,9 +136,11 @@ public class NotificationService {
         Map<Long, LocalDate> surveySent = new HashMap<>();
         surveys.findByCycleIdInAndStatus(ids, PreInterviewSurvey.Status.SENT).forEach(s -> surveySent.put(s.getCycleId(),
                 s.getSentAt().atZoneSameInstant(clock.getZone()).toLocalDate()));
+        Map<Long, PreInterviewSurvey> surveyDraft = new HashMap<>();
+        surveys.findByCycleIdInAndStatus(ids, PreInterviewSurvey.Status.DRAFT).forEach(s -> surveyDraft.put(s.getCycleId(), s));
         return new Context(UserNames.byId(users, visible.stream().map(EvaluationCycle::getEmployeeId).toList()),
                 history.forCycles(visible), lastNote, lastCheckin, pending, hasDg, substitutions.substitutedBy(user.getId()),
-                user.hasRole(Role.HR) || user.hasRole(Role.DG), surveySent);
+                user.hasRole(Role.HR) || user.hasRole(Role.DG), surveySent, surveyDraft);
     }
 
     private void deadlines(EvaluationCycle c, String who, LocalDate today, Context ctx, List<Notification> out) {
@@ -190,6 +198,18 @@ public class NotificationService {
             out.add(new Notification(Type.RESCHEDULE_PENDING, Severity.HIGH, c.getId(), null,
                     "Wniosek " + who + " o zmianę terminu oceny czeka na rozpatrzenie (art. 81 ust. 8 pkt 4)"));
         }
+    }
+
+    private void surveyOpen(EvaluationCycle c, LocalDate today, Context ctx, List<Notification> out) {
+        PreInterviewSurvey survey = ctx.surveyDraft.get(c.getId());
+        if (survey == null || !c.getStatus().isActive() || !survey.isOpen(today)) {
+            return;
+        }
+        LocalDate deadline = survey.getAnswerDeadline();
+        out.add(new Notification(Type.PRE_INTERVIEW_SURVEY_OPEN,
+                deadline == null ? Severity.LOW : severity(deadline, today), c.getId(), deadline,
+                "Przełożony udostępnił ankietę przed rozmową" + (deadline == null ? "" : " — odpowiedzi do "
+                        + DATE.format(deadline)) + " (zakładka „Rozmowy i IPRZ”)"));
     }
 
     private void gradeRequest(EvaluationCycle c, String who, LocalDate today, List<Notification> out) {

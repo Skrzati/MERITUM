@@ -10,6 +10,7 @@ import { AssignCycleDialog } from "@/components/AssignCycleDialog";
 import { EmployeeEditDialog } from "@/components/hr/EmployeeEditDialog";
 import { EmployeeHistoryPanel } from "@/components/hr/EmployeeHistoryPanel";
 import { HrAlertsCard } from "@/components/hr/HrAlertsCard";
+import { IprzSummaryCard } from "@/components/hr/IprzSummaryCard";
 import { RetentionCard } from "@/components/hr/RetentionCard";
 import { SubstitutionsCard } from "@/components/hr/SubstitutionsCard";
 import { EMPLOYMENT_STATUS_LABEL, escalationLabel, formatDate, roleLabel, today, type Tone } from "@/lib/labels";
@@ -94,11 +95,11 @@ function HrPanel() {
     handoverRef.current?.querySelector<HTMLSelectElement>("select[data-new-evaluator]")?.focus({ preventScroll: true });
   };
 
-  const downloadReport = async () => {
+  const downloadReport = (path: string, filename: string) => async () => {
     setReportBusy(true);
     setExportError(null);
     try {
-      await download("/api/hr/reports/export", `raport-ocen-${today()}.csv`);
+      await download(path, filename);
     } catch (e) {
       setExportError(e);
     } finally {
@@ -115,8 +116,18 @@ function HrPanel() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => setAssigning(true)}>+ Przypisz nową ocenę</Button>
-          <Button variant="secondary" onClick={downloadReport} busy={reportBusy}>
+          <Button variant="secondary" onClick={downloadReport("/api/hr/reports/export", `raport-ocen-${today()}.csv`)} busy={reportBusy}>
             ⬇ Pobierz raport sprawozdawczy (CSV)
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={downloadReport(
+              `/api/hr/export/ssc-report.csv?year=${new Date().getFullYear()}`,
+              `sprawozdanie-szefa-sc-${new Date().getFullYear()}.csv`,
+            )}
+            busy={reportBusy}
+          >
+            ⬇ Eksport do Sprawozdania Szefa SC (CSV)
           </Button>
         </div>
       </div>
@@ -133,6 +144,7 @@ function HrPanel() {
       {assigned !== null && <Alert tone="green">Utworzono cykli oceny: {assigned}. Znajdziesz je na Pulpicie.</Alert>}
 
       <HrAlertsCard reloadKey={current?.id} />
+      <IprzSummaryCard reloadKey={current?.id} />
       <RetentionCard />
 
       <Card title="Zaległości i drabina eskalacji">

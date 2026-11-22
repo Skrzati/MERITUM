@@ -63,7 +63,8 @@
 │                                        #   (od 2027-01-01, allowCustom=true), V13 employment_start_date, job_description,
 │                                        #   working_notes_purged_at, V14 criteria_expectations_json, pola podpisu
 │                                        #   (signature_hash, verification_code, signed_at, paper_signed_on, scan_reference),
-│                                        #   users.secondary_roles, employee_private_notes
+│                                        #   users.secondary_roles, employee_private_notes, V15 ankieta przed
+│                                        #   rozmową: opens_on (kiedy oceniany ją widzi), answer_deadline, intro_message
 │   └── src/test/                        # JUnit 5: rules/, pdf/, export/, auth/ (JwtAttackTest, RateLimitFilterTest), service/
 │                                        #   + it/ApiIntegrationTest, it/ProcessCompletionIntegrationTest (Etap 7: przypisywanie,
 │                                        #   powiadomienia, mały urząd, zastępstwa, kadry, korekta), it/SecurityIntegrationTest (IDOR, eskalacja, izolacja urzędów,
@@ -98,14 +99,19 @@
         │                     #   eskalacja, raport CSV, edycja/usuwanie/anonimizacja, historia ocen, zastępstwa),
         │                     #   /stats, /audit (dziennik, filtr AI, maskedPrompt),
         │                     #   /wellbeing (ankieta + klauzula RODO), /admin (wizualny kreator schematów + konta lokalne)
-        ├── components/       # Header (pasek RP, nawigacja, dzwonek powiadomień, rola demo), LoginModal (SSO AD / Węzeł
+        ├── components/       # AccessibilityProvider (motywy light/dark/hc-yellow/hc-bw, daltonizm, zoom 85–175%, Alt+A,
+        │                     #   aria-live), AccessibilityBar (szybkie przełączniki + panel z focus trap), ColorBlindFilters
+        │                     #   (feColorMatrix na #app-content-wrapper), stats/* (CalibrationCard, MentoringCard),
+        │                     #   Header (pasek RP, nawigacja, dzwonek powiadomień, rola demo), LoginModal (SSO AD / Węzeł
         │                     #   Krajowy — symulacja), PrivacyNotice (RODO art. 13, AI Act art. 26/50), UserProvider,
         │                     #   AssignCycleDialog (pojedynczo z kreatorem A/B/C § 3 + podgląd terminu / grupowo),
-        │                     #   RoleGate, ui.tsx (kit gov.pl), hr/* (EmployeeEditDialog, EmployeeHistoryPanel,
-        │                     #   SubstitutionsCard, HrAlertsCard, RetentionCard), admin/SmallOfficeAccounts, cycle/* (CriteriaTab,
-        │                     #   InterviewTab + PreInterviewSurveyCard, NotesTab, EvaluationTab, ChangesTab,
+        │                     #   RoleGate, ui.tsx (kit gov.pl, StatusBadge, VisibilityBanner, AiComplianceBadge), hr/*
+        │                     #   (EmployeeEditDialog, EmployeeHistoryPanel, SubstitutionsCard, HrAlertsCard, RetentionCard,
+        │                     #   IprzSummaryCard), admin/SmallOfficeAccounts (+ role łączone), cycle/* (CriteriaTab,
+        │                     #   InterviewTab + PreInterviewSurveyCard, NotesTab + PrivateDiary, EvaluationTab, ChangesTab,
         │                     #   FormCorrectionPanel, AckTab + ScorePicker, ProgressSteps, context.ts)
-        └── lib/              # api.ts (wyłącznie Bearer JWT z gov-login / local-login, coreAi()), types.ts (wszystkie kontrakty DTO),
+        └── lib/              # a11y.ts (ustawienia dostępności + skrypt startowy przed hydratacją), api.ts (wyłącznie Bearer JWT
+                              #   z gov-login / local-login, coreAi()), types.ts (wszystkie kontrakty DTO),
                               #   labels.ts (etykiety, roleLabel/escalationLabel z DG/kierownikiem urzędu, sheetFromAnswers,
                               #   dueState, MAX_CIVIL_SERVICE_GRADE), useAsync.ts
 ```
@@ -168,7 +174,8 @@ Stronicowanie (opcjonalne, wstecznie zgodne): `GET /api/cycles`, `/api/hr/employ
 | POST | `/api/cycles/{id}/appeal` | oceniany | → APPEALED (w terminie); `appealDecisionDeadline` = +14 dni (art. 83 ust. 3); po REDO ponowny sprzeciw (art. 83 ust. 4, czyści poprzednią decyzję); po CHANGE 409 — tylko sąd pracy (`appealAllowed=false`) |
 | POST | `/api/cycles/{id}/appeal/decision` | DG | `appealRound`+1; CHANGE (nowe oceny) → COMPLETED (zdarzenie `CycleClosed`; ocena negatywna → e-mail z terminem ponownej oceny); REDO → EVALUATION_DRAFT, nowy `dueDate` = max(bieżący, decyzja + 14 dni), czyści datę rozmowy/podpis (.ics z `SEQUENCE = appealRound`), e-mail |
 | POST | `/api/cycles/{id}/court-appeal`, `/court-appeal/close` | HR / DG (urząd) | art. 83 ust. 5: `{filedOn, caseReference?}` COMPLETED → APPEALED_TO_COURT, `legalHold=true` (audyt `COURT_APPEAL_REGISTERED`); `{outcome}` → COMPLETED, `legalHold=false` |
-| GET/POST/DELETE/PUT | `/api/cycles/{id}/pre-interview-survey`, `/questions[/{qid}]`, `/answers`, POST `/send` | odczyt: oceniany, oceniający/zastępca (odpowiedzi po wysłaniu), HR urzędu (bez odpowiedzi); pytania własne: przełożony / HR (DRAFT, `allowCustom` ze schematu, max 10); odpowiedzi i „Wyślij przełożonemu”: oceniany | ankieta przed rozmową niezależna od dobrostanu; audyt `SURVEY_QUESTION_ADDED`, `PRE_INTERVIEW_SURVEY_SENT` |
+| GET/POST/DELETE/PUT | `/api/cycles/{id}/pre-interview-survey`, `/questions[/{qid}]`, `/answers`, POST `/send` | odczyt: oceniany, oceniający/zastępca (odpowiedzi po wysłaniu), HR urzędu (bez odpowiedzi); pytania własne: przełożony / HR (DRAFT, `allowCustom` ze schematu, max 10); odpowiedzi i „Wyślij przełożonemu”: oceniany — dopiero po udostępnieniu (`open`, inaczej 409; oceniany dostaje pustą listę pytań) | ankieta przed rozmową niezależna od dobrostanu; audyt `SURVEY_QUESTION_ADDED`, `PRE_INTERVIEW_SURVEY_SENT` |
+| PUT | `/api/cycles/{id}/pre-interview-survey/settings` | oceniający / zastępca (ankieta DRAFT, cykl aktywny) | `{opensOn (null = nieudostępniona, ≤ dziś = od razu), answerDeadline? (≥ opensOn), introMessage? (≤ 2000)}` → widok z `open`, `canSchedule`; wycofanie (null) tylko, gdy oceniany nie zapisał odpowiedzi (422); audyt `PRE_INTERVIEW_SURVEY_SCHEDULED` |
 | GET/POST | `/api/cycles/{id}/reschedule` | oceniający (pkt 1–3) / oceniany (pkt 4) | art. 81 ust. 8: `{mode: EVALUATOR_CHANGE\|EMPLOYEE_ABSENCE\|EVALUATOR_ABSENCE\|EMPLOYEE_REQUEST, newDueDate, reason}`; warunek > 6 mies.; zawiadomienie § 8 w `noticeText` |
 | POST | `/api/cycles/{id}/reschedule/{requestId}/decision` | oceniający | `{accept, comment}` — decyzja w sprawie wniosku ocenianego |
 | GET/POST | `/api/cycles/{id}/scope-changes` | HR / oceniający | `{changeDate, newPositionTitle?, description, significant}` → `NONE` \| `CRITERIA_RESET` (§ 9 ust. 1) \| `EVALUATION_REQUIRED` (art. 81 ust. 6) |
@@ -184,7 +191,7 @@ Stronicowanie (opcjonalne, wstecznie zgodne): `GET /api/cycles`, `/api/hr/employ
 | GET | `/api/hr/alerts` | HR, DG | alerty z historii + bieżącej oceny (AWAITING_ACK): `TWO_NEGATIVE_TERMINATION` (CRITICAL, urzędnik SC, art. 71 ust. 1 pkt 1), `TWO_NEGATIVE_INFO` (pracownik SC na czas nieokreślony), `MANDATORY_GRADE` (art. 89 ust. 2); krytyczne pierwsze |
 | POST | `/api/hr/retention/purge-working-notes` | HR | czyszczenie danych pomocniczych zamkniętych cykli urzędu (COMPLETED, bez legal hold, po `RETENTION_GRACE_DAYS` od zamknięcia): notatki, ankiety przed rozmową, self-prep → `{cyclesPurged, notesDeleted, surveysDeleted, skippedLegalHold}`; arkusz, historia i audyt zostają; audyt `WORKING_NOTES_PURGED` |
 | GET | `/api/hr/overdue` | HR, DG | aktywne cykle po terminie (bez sporządzonej oceny), malejąco wg `overdueDays`, z `escalationLevel`: 1–7 OCENIAJACY, 8–14 ZASTEPCA, 15–30 KADRY, > 30 DYREKTOR_GENERALNY |
-| GET | `/api/notifications` | zalogowany | wyliczane w locie dla widocznych cykli: `OVERDUE`, `DUE_SOON` (≤ 30 dni), `CRITERIA_DUE`, `APPEAL_DECISION_DUE`, `MANDATORY_GRADE_DUE`; oceniający/zastępca: `QUARTERLY_CHECKIN` (OBSERVATION, ≥ 90 dni bez aktywności MEDIUM, ≥ 120 HIGH), `RESCHEDULE_PENDING`; HR/DG: `GRADE_REQUEST_SUBMITTED` (30 dni od sporządzenia); oceniany i oceniający: `APPEAL_DECIDED` (30 dni); HR/DG: `HR_CRITICAL_ALERT` / `HR_INFO_ALERT` (`cycleId` może być null); oceniający: `PRE_INTERVIEW_SURVEY_SENT` (30 dni); `{type, severity, cycleId, dueDate, message}` |
+| GET | `/api/notifications` | zalogowany | wyliczane w locie dla widocznych cykli: `OVERDUE`, `DUE_SOON` (≤ 30 dni), `CRITERIA_DUE`, `APPEAL_DECISION_DUE`, `MANDATORY_GRADE_DUE`; oceniający/zastępca: `QUARTERLY_CHECKIN` (OBSERVATION, ≥ 90 dni bez aktywności MEDIUM, ≥ 120 HIGH), `RESCHEDULE_PENDING`; HR/DG: `GRADE_REQUEST_SUBMITTED` (30 dni od sporządzenia); oceniany i oceniający: `APPEAL_DECIDED` (30 dni); HR/DG: `HR_CRITICAL_ALERT` / `HR_INFO_ALERT` (`cycleId` może być null); oceniający: `PRE_INTERVIEW_SURVEY_SENT` (30 dni); oceniany: `PRE_INTERVIEW_SURVEY_OPEN` (udostępniona, niewysłana; `dueDate` = termin odpowiedzi); `{type, severity, cycleId, dueDate, message}` |
 | GET/POST | `/api/substitutions` | GET: HR/DG — urząd, pozostali — własne; POST: HR | `{evaluatorId, deputyId, startDate, endDate, reason}` → `SubstitutionDto` (`activeToday`) |
 | DELETE | `/api/substitutions/{id}` | HR | zakończenie (przyszłe — usunięte, trwające — koniec wczoraj) |
 | GET | `/api/admin/schemas/{id}/package` | KPRM_ADMIN | pakiet reguł `meritum-rules-<versionCode>.json` (`format`, `versionCode`, `effectiveFrom`, `periodMonths`, `config`) |
@@ -403,6 +410,13 @@ Hibernate `ddl-auto: validate` — schemat zmienia WYŁĄCZNIE Flyway.
 - Uprawnienia w UI wynikają z relacji do cyklu (evaluatorId/employeeId), tak jak w backendzie; UI tylko ukrywa akcje, decyduje backend.
 - Reguły prawa nie są duplikowane w UI: katalog kryteriów z `/api/schemas/{id}`, wynik oceny z silnika reguł (średnia w UI to tylko podgląd).
 - Dostępność: WCAG 2.1 AA — etykiety pól, focus-visible, role tablist/tab, `aria-*`, kontrast gov-blue (#0052A5) na bieli.
+- Motywy: kolory wyłącznie przez tokeny CSS z `globals.css` (`--bg`, `--surface`, `--text`, `--accent`, `--status-*`…);
+  `tailwind.config.ts` mapuje na nie `white`, `slate`, `gov`, `navy`, `red`, `amber`, `green` — nowe widoki nie używają
+  surowych hexów. Filtr daltonizmu tylko na `#app-content-wrapper` (nie na `<html>`/`<body>`). Statusy: `StatusBadge`
+  (ikona + wzór obramowania + tekst); `Badge`/`Alert` przy `data-status-shapes="on"` dostają kształty z CSS.
+- Język UI: wyłącznie polski (bez „check-in”, „draft”, „legal hold”…); rozmowa rozpoczynająca i oceniająca oznaczane
+  „Obowiązkowe (ustawa o SC)”, bieżąca — „Zalecany standard ZZL” (`INTERVIEW_LEGAL_STATUS`). Formularze z danymi osobowymi
+  mają `VisibilityBanner`, wyniki AI — `AiComplianceBadge` (`complianceMeta`).
 - Statystyki: backend zwraca `{value, suppressed}` i `kAnonymity` — UI pokazuje `<k` dla `suppressed`, nie liczy progu;
   karta dobrostanu pokazuje średnie tylko, gdy backend je zwrócił (≥ k odpowiedzi).
 

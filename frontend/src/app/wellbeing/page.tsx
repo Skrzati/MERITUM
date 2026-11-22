@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Alert, Button, Card, ProblemAlert } from "@/components/ui";
+import { Alert, Button, Card, ProblemAlert, VisibilityBanner } from "@/components/ui";
 import { api } from "@/lib/api";
 
 const QUESTIONS = [
@@ -51,6 +51,7 @@ export default function WellbeingPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <h1 className="text-2xl font-bold text-gov-text">Dobrostan — ankieta dobrowolna</h1>
+      <VisibilityBanner kind="anonymous" />
 
       <section aria-labelledby="rodo-title" className="rounded border-2 border-gov-blue bg-white p-4">
         <h2 id="rodo-title" className="text-base font-bold text-gov-blue">

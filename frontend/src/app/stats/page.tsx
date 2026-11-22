@@ -1,6 +1,8 @@
 "use client";
 
 import { RoleGate } from "@/components/RoleGate";
+import { CalibrationCard } from "@/components/stats/CalibrationCard";
+import { MentoringCard } from "@/components/stats/MentoringCard";
 import { Alert, Card, ProblemAlert, Spinner, Stat } from "@/components/ui";
 import { useUser } from "@/components/UserProvider";
 import { api } from "@/lib/api";
@@ -55,6 +57,8 @@ function Stats() {
             <Distribution title="Etapy procesu" data={s.byStatus} k={s.kAnonymity} label={(key) => STATUS_LABEL[key as keyof typeof STATUS_LABEL] ?? key} />
           </div>
           <WellbeingCard w={s.wellbeing} k={s.kAnonymity} />
+          <CalibrationCard reloadKey={current?.id} />
+          <MentoringCard />
         </>
       )}
     </div>

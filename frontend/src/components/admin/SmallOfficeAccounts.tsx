@@ -33,6 +33,7 @@ export function SmallOfficeAccounts() {
   );
   const [form, setForm] = useState(EMPTY_FORM);
   const [passwordFor, setPasswordFor] = useState<number | null>(null);
+  const [rolesFor, setRolesFor] = useState<number | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -149,7 +150,34 @@ export function SmallOfficeAccounts() {
                     </td>
                     <td className="py-2 pr-3 text-xs">
                       {ROLE_LABEL[a.user.role]}
+                      {a.user.secondaryRoles?.length ? (
+                        <span className="mt-1 flex flex-wrap gap-1">
+                          {a.user.secondaryRoles.map((r) => (
+                            <Badge key={r} tone="blue">
+                              + {ROLE_LABEL[r]}
+                            </Badge>
+                          ))}
+                        </span>
+                      ) : null}
                       <span className="block text-slate-600">{EMPLOYMENT_STATUS_LABEL[a.user.employmentStatus]}</span>
+                      {rolesFor === a.user.id ? (
+                        <SecondaryRolesEditor
+                          account={a}
+                          busy={busy === "roles"}
+                          onCancel={() => setRolesFor(null)}
+                          onSave={(secondaryRoles) =>
+                            void run("roles", async () => {
+                              await api(`/api/admin/accounts/${a.user.id}/roles`, { method: "PATCH", body: { secondaryRoles } });
+                              setRolesFor(null);
+                              return `Zapisano role łączone: ${a.user.fullName}.`;
+                            })
+                          }
+                        />
+                      ) : (
+                        <button type="button" className="mt-1 text-gov-blue underline" onClick={() => setRolesFor(a.user.id)}>
+                          Role łączone
+                        </button>
+                      )}
                     </td>
                     <td className="py-2 pr-3">
                       {a.hasLocalPassword ? (
@@ -270,5 +298,47 @@ export function SmallOfficeAccounts() {
         {info && !error && <Alert tone="green">{info}</Alert>}
       </div>
     </Card>
+  );
+}
+
+/** Role dodatkowe w małym urzędzie (np. kierownik urzędu = DG + przełożony + kadry); KPRM_ADMIN nie może być rolą dodatkową. */
+function SecondaryRolesEditor({
+  account,
+  busy,
+  onSave,
+  onCancel,
+}: {
+  account: Account;
+  busy: boolean;
+  onSave: (roles: Role[]) => void;
+  onCancel: () => void;
+}) {
+  const [roles, setRoles] = useState<Role[]>(account.user.secondaryRoles ?? []);
+  const available = ROLES.filter((r) => r !== account.user.role);
+  return (
+    <fieldset className="mt-2 rounded border border-slate-300 p-2">
+      <legend className="px-1 font-semibold">Role dodatkowe</legend>
+      <div className="flex flex-wrap gap-3">
+        {available.map((r) => (
+          <label key={r} className="flex items-center gap-1">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-gov-blue"
+              checked={roles.includes(r)}
+              onChange={(e) => setRoles((x) => (e.target.checked ? [...x, r] : x.filter((y) => y !== r)))}
+            />
+            {ROLE_LABEL[r]}
+          </label>
+        ))}
+      </div>
+      <div className="mt-2 flex gap-2">
+        <Button busy={busy} onClick={() => onSave(roles)}>
+          Zapisz role
+        </Button>
+        <Button variant="secondary" onClick={onCancel}>
+          Anuluj
+        </Button>
+      </div>
+    </fieldset>
   );
 }

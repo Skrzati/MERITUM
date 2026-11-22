@@ -1,17 +1,69 @@
 "use client";
 
 import { useState } from "react";
-import { AiDisclaimer, Alert, Badge, Button, Card, Field, inputClass, MaskedPrompt, ModeBadge, ProblemAlert, Spinner, Stat } from "@/components/ui";
+import {
+  AiComplianceBadge,
+  AiDisclaimer,
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Field,
+  inputClass,
+  MaskedPrompt,
+  ModeBadge,
+  ProblemAlert,
+  Spinner,
+  Stat,
+} from "@/components/ui";
 import { useUser } from "@/components/UserProvider";
 import { api, coreAi } from "@/lib/api";
 import { formatDate } from "@/lib/labels";
 import type { HrFacts, HrPartnerResponse, Note } from "@/lib/types";
 import { useAsync } from "@/lib/useAsync";
 import type { CycleView } from "./context";
+import { PrivateDiary } from "./PrivateDiary";
 
 const ACTIVE = ["DRAFT_CRITERIA", "CRITERIA_CONFIRMED", "OBSERVATION", "EVALUATION_DRAFT", "AWAITING_ACK"];
+/** RETENTION_GRACE_DAYS w backend-core (domyślnie 30) — notatki robocze zamkniętych cykli są usuwane po tym czasie. */
+const WORKING_NOTES_GRACE_DAYS = 30;
 
 export function NotesTab({ view }: { view: CycleView }) {
+  const [section, setSection] = useState<"notes" | "diary">("notes");
+  if (!view.isEmployee) return <WorkingNotes view={view} />;
+  return (
+    <div className="space-y-4">
+      <div role="tablist" aria-label="Notatki" className="flex flex-wrap gap-1 border-b border-slate-200">
+        {(
+          [
+            ["notes", "Notatki przełożonego"],
+            ["diary", "Mój prywatny dziennik"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            id={`notes-tab-${id}`}
+            aria-selected={section === id}
+            aria-controls={`notes-panel-${id}`}
+            onClick={() => setSection(id)}
+            className={`-mb-px border-b-4 px-3 py-2 text-sm font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-gov-blue ${
+              section === id ? "border-gov-blue text-gov-blue" : "border-transparent text-gov-text hover:text-gov-blue"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div role="tabpanel" id={`notes-panel-${section}`} aria-labelledby={`notes-tab-${section}`}>
+        {section === "notes" ? <WorkingNotes view={view} /> : <PrivateDiary cycleId={view.cycle.id} />}
+      </div>
+    </div>
+  );
+}
+
+function WorkingNotes({ view }: { view: CycleView }) {
   const { cycle, notes, notesError, isEvaluator, isEmployee, refresh } = view;
   const { userName } = useUser();
   const [content, setContent] = useState("");
@@ -37,6 +89,15 @@ export function NotesTab({ view }: { view: CycleView }) {
     <div className="grid gap-6 lg:grid-cols-5">
       <div className="space-y-6 lg:col-span-3">
         <Card title="Oś czasu notatek">
+          {!cycle.workingNotesPurgedAt && (
+            <div className="mb-3">
+              <Alert tone="blue" title="Notatki robocze są tymczasowe — bez „czarnych teczek”">
+                Notatki robocze są automatycznie usuwane {WORKING_NOTES_GRACE_DAYS} dni po zamknięciu cyklu. Do akt osobowych trafia
+                wyłącznie arkusz oceny (część B); notatki nie wchodzą też do paczki archiwalnej EZD.
+                {cycle.legalHold ? " Spór przed sądem pracy wstrzymuje usunięcie do jego zakończenia." : ""}
+              </Alert>
+            </div>
+          )}
           {cycle.workingNotesPurgedAt && (
             <div className="mb-3">
               <Alert tone="slate">
@@ -73,7 +134,7 @@ export function NotesTab({ view }: { view: CycleView }) {
               </Field>
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" className="h-4 w-4 accent-navy-700" checked={shared} onChange={(e) => setShared(e.target.checked)} />
-                Udostępnij ocenianemu po zakończeniu oceny (<code>isSharedAfterEval</code>)
+                Udostępnij ocenianemu po zakończeniu oceny
               </label>
               <ProblemAlert error={error} />
               <Button onClick={add} busy={busy} disabled={!content.trim()}>
@@ -86,8 +147,8 @@ export function NotesTab({ view }: { view: CycleView }) {
 
       <div className="lg:col-span-2">
         {isEmployee ? (
-          <Alert tone="slate" title="Wirtualny HR Partner">
-            Moduł wspiera przełożonego i kadry — oceniany nie widzi analiz opartych na roboczych notatkach (decyzja D4).
+          <Alert tone="slate" title="Wirtualny doradca HR">
+            Moduł wspiera przełożonego i kadry — oceniany nie widzi analiz opartych na roboczych notatkach.
           </Alert>
         ) : (
           <HrPartnerPanel
@@ -125,7 +186,7 @@ function HrPartnerPanel({ cycleId, notes, notesCount, disabled }: { cycleId: num
   };
 
   return (
-    <Card title="Wirtualny HR Partner" actions={result && <ModeBadge mode={result.mode} />}>
+    <Card title="Wirtualny doradca HR" actions={result && <ModeBadge mode={result.mode} />}>
       <p className="mb-3 text-xs text-slate-600">Fakty policzone z bazy (nie szacowane przez AI) — przekazywane do analizy.</p>
       {facts.loading && !facts.data && <Spinner label="Liczenie faktów…" />}
       <ProblemAlert error={facts.error} />
@@ -147,7 +208,7 @@ function HrPartnerPanel({ cycleId, notes, notesCount, disabled }: { cycleId: num
           </p>
           <div className="mt-3">
             <Button variant="ai" onClick={() => analyze(facts.data!)} busy={busy} disabled={disabled}>
-              Analizuj z Wirtualnym HR Partnerem
+              Analizuj z wirtualnym doradcą HR
             </Button>
           </div>
         </>
@@ -170,6 +231,7 @@ function HrPartnerPanel({ cycleId, notes, notesCount, disabled }: { cycleId: num
               <p className="mt-1 text-sm text-slate-800">{result.appreciation_moment}</p>
             </div>
             <MaskedPrompt prompt={result.masked_prompt} />
+            <AiComplianceBadge meta={result.complianceMeta} />
             <AiDisclaimer text={result.ai_disclaimer} />
           </>
         )}

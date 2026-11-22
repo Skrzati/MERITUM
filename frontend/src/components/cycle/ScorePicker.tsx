@@ -8,10 +8,13 @@ export function ScorePicker({
   criteria,
   scores,
   onChange,
+  expectations,
   disabled = false,
 }: {
   criteria: Criterion[];
   scores: Record<string, number>;
+  /** Ustalone na rozmowie rozpoczynającej oczekiwania (poziom 5 pkt) — przypomnienie przy wystawianiu ocen. */
+  expectations?: Record<string, string> | null;
   onChange: (code: string, value: number) => void;
   disabled?: boolean;
 }) {
@@ -35,6 +38,11 @@ export function ScorePicker({
             <tr key={c.code} className="border-b border-slate-100 last:border-0">
               <th scope="row" className="py-2 pr-3 text-left font-medium">
                 {c.name} <span className="font-mono text-xs text-slate-600">{c.code}</span>
+                {expectations?.[c.code] && (
+                  <span className="mt-1 block max-w-xs whitespace-pre-wrap text-xs font-normal text-slate-700">
+                    <span className="font-semibold">Oczekiwania (5 pkt):</span> {expectations[c.code]}
+                  </span>
+                )}
               </th>
               {SCALE.map((s) => {
                 const checked = scores[c.code] === s.value;

@@ -8,6 +8,7 @@ import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 
 /**
@@ -29,6 +30,15 @@ public class PreInterviewSurvey {
     private Status status = Status.DRAFT;
     private OffsetDateTime sentAt;
     private OffsetDateTime updatedAt;
+    /** Od tego dnia oceniany widzi ankietę; null — przełożony jeszcze jej nie udostępnił. */
+    private LocalDate opensOn;
+    private LocalDate answerDeadline;
+    private String introMessage;
+    private Long scheduledBy;
+
+    public boolean isOpen(LocalDate today) {
+        return opensOn != null && !opensOn.isAfter(today);
+    }
 
     public enum Status { DRAFT, SENT }
 }

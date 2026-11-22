@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { formatDate, ROLE_LABEL, ROLE_ORDER, roleLabel } from "@/lib/labels";
 import type { NotificationItem, Role, User } from "@/lib/types";
 import { useAsync } from "@/lib/useAsync";
+import { AccessibilityBar } from "./AccessibilityBar";
 import { LoginModal } from "./LoginModal";
 import { useUser } from "./UserProvider";
 
@@ -15,8 +16,8 @@ const NAV: { href: string; label: string; roles?: Role[] }[] = [
   { href: "/team", label: "Mój zespół", roles: ["EVALUATOR", "DG"] },
   { href: "/hr", label: "Panel Kadr", roles: ["HR"] },
   { href: "/stats", label: "Statystyki", roles: ["DG", "HR"] },
-  { href: "/audit", label: "Audyt", roles: ["HR", "DG", "KPRM_ADMIN"] },
-  { href: "/admin", label: "Prawo jako kod", roles: ["KPRM_ADMIN"] },
+  { href: "/audit", label: "Rejestr zdarzeń", roles: ["HR", "DG", "KPRM_ADMIN"] },
+  { href: "/admin", label: "Administracja", roles: ["KPRM_ADMIN"] },
   { href: "/wellbeing", label: "Dobrostan" },
 ];
 
@@ -44,6 +45,7 @@ export function Header() {
           </Link>
 
           <div className="flex flex-wrap items-center gap-3">
+            <AccessibilityBar />
             {current && <NotificationBell userId={current.id} />}
             <div className="text-right text-xs text-slate-700">
               {current ? (
@@ -65,7 +67,7 @@ export function Header() {
               onClick={openLogin}
               className="rounded border border-gov-blue px-3 py-1.5 text-sm font-bold text-gov-blue hover:bg-gov-light focus:outline-none focus-visible:ring-2 focus-visible:ring-gov-blue"
             >
-              Logowanie / SSO
+              Zaloguj się
             </button>
             {current && (
               <button

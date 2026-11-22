@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { AiDisclaimer, Alert, Badge, Button, Card, Field, inputClass, MaskedPrompt, ModeBadge, ProblemAlert } from "@/components/ui";
+import { AiComplianceBadge, AiDisclaimer, Alert, Badge, Button, Card, Field, inputClass, MaskedPrompt, ModeBadge, ProblemAlert } from "@/components/ui";
 import { api, coreAi, download } from "@/lib/api";
-import { formatDate } from "@/lib/labels";
+import { formatDate, INTERVIEW_LEGAL_STATUS } from "@/lib/labels";
 import type { CatalogCriterion, Cycle, SuggestCriteriaResponse } from "@/lib/types";
 import type { CycleView } from "./context";
 
 const DEFAULT_MAX_ADDITIONAL = 3;
+const MAX_EXPECTATION_LENGTH = 2000;
 
 export function CriteriaTab({ view }: { view: CycleView }) {
   const { cycle, schema, employee, isEvaluator, isEmployee, refresh } = view;
@@ -22,6 +23,8 @@ export function CriteriaTab({ view }: { view: CycleView }) {
     (cycle.criteria ?? []).filter((c) => !c.mandatory).map((c) => c.code),
   );
   const [interviewDate, setInterviewDate] = useState(cycle.criteriaInterviewDate ?? "");
+  const [expectations, setExpectations] = useState<Record<string, string>>(cycle.criteriaExpectations ?? {});
+  const chosenCodes = [...mandatoryCodes, ...selected];
   const [responsibilities, setResponsibilities] = useState("");
   const [suggestion, setSuggestion] = useState<SuggestCriteriaResponse | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -51,7 +54,14 @@ export function CriteriaTab({ view }: { view: CycleView }) {
   const save = () =>
     run("save", () =>
       api<Cycle>(`/api/cycles/${cycle.id}/criteria`, {
-        body: { additional: selected.map((code) => ({ code })), interviewDate: interviewDate || null },
+        body: {
+          additional: selected.map((code) => ({ code })),
+          interviewDate: interviewDate || null,
+          // backend przyjmuje wyłącznie klucze kryteriów arkusza (inaczej 422) — puste pola pomijamy
+          expectations: Object.fromEntries(
+            chosenCodes.filter((code) => expectations[code]?.trim()).map((code) => [code, expectations[code].trim()]),
+          ),
+        },
       }),
     );
   const confirm = () => run("confirm", () => api<Cycle>(`/api/cycles/${cycle.id}/confirm-criteria`, { method: "POST" }));
@@ -74,6 +84,8 @@ export function CriteriaTab({ view }: { view: CycleView }) {
     );
   const takeAll = () =>
     setSelected((s) => [...new Set([...s, ...(suggestion?.suggestions.map((x) => x.code) ?? [])])].slice(0, maxAdditional));
+  const takeExpectations = (code: string, items: string[]) =>
+    setExpectations((e) => ({ ...e, [code]: e[code]?.trim() ? e[code] : items.join("\n") }));
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
@@ -90,6 +102,12 @@ export function CriteriaTab({ view }: { view: CycleView }) {
                     </span>
                     <Badge tone={c.mandatory ? "blue" : "slate"}>{c.mandatory ? "obowiązkowe" : "dodatkowe"}</Badge>
                   </div>
+                  {cycle.criteriaExpectations?.[c.code] && (
+                    <div className="ml-6 mt-2 rounded bg-gov-light px-2 py-1 text-xs text-gov-text">
+                      <span className="font-semibold">Ustalone oczekiwania (poziom 5 pkt):</span>
+                      <p className="whitespace-pre-wrap">{cycle.criteriaExpectations[c.code]}</p>
+                    </div>
+                  )}
                   <Behaviours criterion={byCode(c.code)} />
                 </li>
               ))}
@@ -101,7 +119,9 @@ export function CriteriaTab({ view }: { view: CycleView }) {
           <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
             <dt className="text-slate-600">Termin ustalenia kryteriów (§ 7)</dt>
             <dd>{formatDate(cycle.criteriaDeadline)}</dd>
-            <dt className="text-slate-600">Rozmowa rozpoczynająca</dt>
+            <dt className="text-slate-600">
+              Rozmowa rozpoczynająca <span className="block text-xs">{INTERVIEW_LEGAL_STATUS.mandatory}</span>
+            </dt>
             <dd>{formatDate(cycle.criteriaInterviewDate)}</dd>
             {cycle.criteriaConfirmedOn && (
               <>
@@ -123,8 +143,9 @@ export function CriteriaTab({ view }: { view: CycleView }) {
                   run("pdf1", () => download(`/api/cycles/${cycle.id}/pdf?parts=1`, `arkusz-oceny-${cycle.id}-czesc-I.pdf`), false)
                 }
               >
-                Drukuj Część I arkusza (kryteria i podpisy)
+                Drukuj wyłącznie Część I (PDF)
               </Button>
+              <p className="mt-1 text-xs text-slate-600">Kryteria, oczekiwania i podpisy po rozmowie rozpoczynającej.</p>
             </div>
           ) : null}
 
@@ -184,6 +205,11 @@ export function CriteriaTab({ view }: { view: CycleView }) {
                             <li key={e}>{e}</li>
                           ))}
                         </ul>
+                        {checked && s.expectations.length > 0 && (
+                          <Button variant="secondary" className="mt-2" onClick={() => takeExpectations(s.code, s.expectations)}>
+                            Wstaw jako ustalone oczekiwania (do edycji)
+                          </Button>
+                        )}
                       </li>
                     );
                   })}
@@ -192,6 +218,7 @@ export function CriteriaTab({ view }: { view: CycleView }) {
                   Zaznacz wszystkie sugerowane
                 </Button>
                 <MaskedPrompt prompt={suggestion.masked_prompt} />
+                <AiComplianceBadge meta={suggestion.complianceMeta} />
                 <AiDisclaimer text={suggestion.ai_disclaimer} />
               </div>
             )}
@@ -241,8 +268,28 @@ export function CriteriaTab({ view }: { view: CycleView }) {
                 })}
             </div>
           </fieldset>
+          <fieldset className="mt-4 space-y-3">
+            <legend className="mb-1 text-sm font-medium text-slate-800">
+              Ustalone oczekiwania (poziom 5 pkt) — § 5 ust. 1 pkt 3
+            </legend>
+            {chosenCodes.map((code) => (
+              <Field key={code} label={`${code} · ${nameOf(code)}`}>
+                <textarea
+                  className={inputClass}
+                  rows={2}
+                  maxLength={MAX_EXPECTATION_LENGTH}
+                  placeholder="Co oznacza wykonywanie obowiązków na poziomie oczekiwań w tym kryterium?"
+                  value={expectations[code] ?? ""}
+                  onChange={(e) => setExpectations((x) => ({ ...x, [code]: e.target.value }))}
+                />
+              </Field>
+            ))}
+          </fieldset>
           <div className="mt-4">
-            <Field label="Data rozmowy rozpoczynającej (§ 5 ust. 1)" hint={`Termin: ${formatDate(cycle.criteriaDeadline)}`}>
+            <Field
+              label="Data rozmowy rozpoczynającej (§ 5 ust. 1)"
+              hint={`${INTERVIEW_LEGAL_STATUS.mandatory} · termin: ${formatDate(cycle.criteriaDeadline)}`}
+            >
               <input type="date" className={inputClass} value={interviewDate} onChange={(e) => setInterviewDate(e.target.value)} />
             </Field>
           </div>

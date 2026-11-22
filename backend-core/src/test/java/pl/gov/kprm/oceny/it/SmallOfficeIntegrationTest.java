@@ -21,6 +21,8 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -123,9 +125,14 @@ class SmallOfficeIntegrationTest {
     @Test
     void preInterviewSurveyWithCustomQuestionIsSentToSupervisor() throws Exception {
         String base = "/api/cycles/" + SMALL_CYCLE + "/pre-interview-survey";
-        JsonNode initial = fetch(base, SMALL_EMPLOYEE);
+        JsonNode hidden = fetch(base, SMALL_EMPLOYEE);
+        assertThat(hidden.path("open").asBoolean()).isFalse();
+        assertThat(hidden.path("questions").size()).isZero();
+        send(put(base + "/answers"), SMALL_EMPLOYEE, "{\"answers\": {\"Q1\": \"za wcześnie\"}}", 409);
+        JsonNode initial = fetch(base, SMALL_EVALUATOR);
         assertThat(initial.path("status").asText()).isEqualTo("DRAFT");
         assertThat(initial.path("allowCustom").asBoolean()).isTrue();
+        assertThat(initial.path("canSchedule").asBoolean()).isTrue();
         assertThat(initial.path("questions").size()).isEqualTo(5);
 
         JsonNode withCustom = send(post(base + "/questions"), SMALL_EVALUATOR,
@@ -133,6 +140,21 @@ class SmallOfficeIntegrationTest {
         JsonNode custom = withCustom.path("questions").get(5);
         assertThat(custom.path("custom").asBoolean()).isTrue();
         send(post(base + "/questions"), SMALL_EMPLOYEE, "{\"text\": \"Pytanie ocenianego\"}", 403);
+
+        LocalDate today = LocalDate.now(ZoneId.of("Europe/Warsaw"));
+        send(put(base + "/settings"), SMALL_EMPLOYEE, "{\"opensOn\": \"%s\"}".formatted(today), 403);
+        send(put(base + "/settings"), SMALL_EVALUATOR,
+                "{\"opensOn\": \"%s\", \"answerDeadline\": \"%s\"}".formatted(today, today.minusDays(1)), 422);
+        JsonNode opened = send(put(base + "/settings"), SMALL_EVALUATOR,
+                "{\"opensOn\": \"%s\", \"answerDeadline\": \"%s\", \"introMessage\": \"Proszę o odpowiedzi przed rozmową.\"}"
+                        .formatted(today, today.plusDays(7)), 200);
+        assertThat(opened.path("open").asBoolean()).isTrue();
+        assertThat(fetch(base, SMALL_EMPLOYEE).path("introMessage").asText()).isEqualTo("Proszę o odpowiedzi przed rozmową.");
+        boolean employeeNotified = false;
+        for (JsonNode n : fetch("/api/notifications", SMALL_EMPLOYEE)) {
+            employeeNotified |= n.path("type").asText().equals("PRE_INTERVIEW_SURVEY_OPEN");
+        }
+        assertThat(employeeNotified).isTrue();
 
         send(put(base + "/answers"), SMALL_EMPLOYEE, """
                 {"answers": {"Q1": "Kontrole gospodarstw bez uwag", "%s": "Bardzo dobra"}}

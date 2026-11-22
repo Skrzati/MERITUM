@@ -2,10 +2,281 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Tokeny motywów (kanały RGB — Tailwind dokłada przezroczystość przez `rgb(var(--x) / a)`).
+ * Kontrast tekstu: ≥ 4.5:1 w motywach jasnym, ciemnym i Okabe-Ito; ≥ 7:1 w trybach wysokiego kontrastu.
+ */
+:root,
+[data-theme="light"] {
+  --bg: 245 246 247;
+  --surface: 255 255 255;
+  --surface-2: 241 245 249;
+  --text: 27 27 27;
+  --text-muted: 64 74 89;
+  --border: 216 222 230;
+  --border-strong: 118 128 142;
+  --accent: 0 82 165;
+  --accent-hover: 0 59 120;
+  --accent-soft: 230 240 250;
+  --accent-soft-strong: 204 224 245;
+  --accent-ink: 0 42 87;
+  --brand-red: 212 33 61;
+  --status-ok: 22 101 52;
+  --status-ok-soft: 236 253 243;
+  --status-warn: 146 64 14;
+  --status-warn-soft: 255 251 235;
+  --status-err: 185 28 28;
+  --status-err-soft: 254 242 242;
+  --highlight: 253 230 138;
+  --highlight-ink: 69 26 3;
+  --focus-ring: 0 82 165;
+  --focus-ring-2: 255 255 255;
+}
+
+[data-theme="dark"] {
+  --bg: 15 23 32;
+  --surface: 26 34 45;
+  --surface-2: 36 46 59;
+  --text: 236 240 244;
+  --text-muted: 184 194 206;
+  --border: 58 71 87;
+  --border-strong: 120 135 153;
+  --accent: 122 178 255;
+  --accent-hover: 163 202 255;
+  --accent-soft: 23 45 74;
+  --accent-soft-strong: 31 61 99;
+  --accent-ink: 196 220 255;
+  --brand-red: 255 107 125;
+  --status-ok: 110 231 160;
+  --status-ok-soft: 18 52 36;
+  --status-warn: 251 191 36;
+  --status-warn-soft: 58 42 10;
+  --status-err: 255 138 138;
+  --status-err-soft: 64 22 26;
+  --highlight: 92 74 15;
+  --highlight-ink: 255 236 179;
+  --focus-ring: 255 214 10;
+  --focus-ring-2: 0 0 0;
+}
+
+/* Wysoki kontrast gov.pl: żółty na czarnym (19:1). Statusy rozróżniane kształtem, nie kolorem (data-status-shapes). */
+[data-theme="hc-yellow"] {
+  --bg: 0 0 0;
+  --surface: 0 0 0;
+  --surface-2: 26 26 0;
+  --text: 255 255 0;
+  --text-muted: 255 255 0;
+  --border: 255 255 0;
+  --border-strong: 255 255 0;
+  --accent: 255 255 0;
+  --accent-hover: 255 255 255;
+  --accent-soft: 38 38 0;
+  --accent-soft-strong: 64 64 0;
+  --accent-ink: 255 255 0;
+  --brand-red: 255 255 0;
+  --status-ok: 255 255 0;
+  --status-ok-soft: 0 0 0;
+  --status-warn: 255 255 0;
+  --status-warn-soft: 0 0 0;
+  --status-err: 255 255 0;
+  --status-err-soft: 0 0 0;
+  --highlight: 255 255 0;
+  --highlight-ink: 0 0 0;
+  --focus-ring: 255 255 255;
+  --focus-ring-2: 0 0 0;
+}
+
+/* Wysoki kontrast: czarny na białym (21:1). */
+[data-theme="hc-bw"] {
+  --bg: 255 255 255;
+  --surface: 255 255 255;
+  --surface-2: 240 240 240;
+  --text: 0 0 0;
+  --text-muted: 0 0 0;
+  --border: 0 0 0;
+  --border-strong: 0 0 0;
+  --accent: 0 0 0;
+  --accent-hover: 51 51 51;
+  --accent-soft: 230 230 230;
+  --accent-soft-strong: 204 204 204;
+  --accent-ink: 0 0 0;
+  --brand-red: 0 0 0;
+  --status-ok: 0 0 0;
+  --status-ok-soft: 255 255 255;
+  --status-warn: 0 0 0;
+  --status-warn-soft: 255 255 255;
+  --status-err: 0 0 0;
+  --status-err-soft: 255 255 255;
+  --highlight: 0 0 0;
+  --highlight-ink: 255 255 255;
+  --focus-ring: 0 0 0;
+  --focus-ring-2: 255 214 10;
+}
+
+/*
+ * Paleta Okabe-Ito (odcienie przyciemnione / rozjaśnione do kontrastu tekstu ≥ 4.5:1).
+ * W trybach symulowanych filtrem SVG (protanopia…) tą paletą sterowane są elementy poza filtrowanym wrapperem:
+ * panel ułatwień ([data-a11y-surface]) i natywne okna <dialog> (warstwa top-layer).
+ */
+[data-theme="light"][data-cb="okabe-ito"],
+[data-theme="light"]:is([data-cb="protanopia"], [data-cb="deuteranopia"], [data-cb="tritanopia"]) :is(dialog, [data-a11y-surface]) {
+  --accent: 0 114 178;
+  --accent-hover: 0 84 132;
+  --accent-soft: 230 242 250;
+  --accent-ink: 0 61 96;
+  --brand-red: 168 74 0;
+  --status-ok: 0 122 90;
+  --status-ok-soft: 230 245 240;
+  --status-warn: 154 100 0;
+  --status-warn-soft: 253 243 224;
+  --status-err: 168 74 0;
+  --status-err-soft: 251 234 224;
+  --highlight: 240 228 66;
+  --highlight-ink: 27 27 27;
+}
+
+[data-theme="dark"][data-cb="okabe-ito"],
+[data-theme="dark"]:is([data-cb="protanopia"], [data-cb="deuteranopia"], [data-cb="tritanopia"]) :is(dialog, [data-a11y-surface]) {
+  --accent: 86 180 233;
+  --accent-hover: 140 205 242;
+  --accent-ink: 190 228 249;
+  --brand-red: 240 122 42;
+  --status-ok: 79 209 174;
+  --status-warn: 230 159 0;
+  --status-err: 240 122 42;
+  --highlight: 92 86 20;
+  --highlight-ink: 240 228 66;
+}
+
+/* Korekcja barw (daltonizacja) — filtr na wrapperze treści, NIE na <html>/<body> (zachowuje position: fixed). */
+[data-cb="protanopia"] #app-content-wrapper {
+  filter: url(#a11y-filter-protanopia);
+}
+[data-cb="deuteranopia"] #app-content-wrapper {
+  filter: url(#a11y-filter-deuteranopia);
+}
+[data-cb="tritanopia"] #app-content-wrapper {
+  filter: url(#a11y-filter-tritanopia);
+}
+
+/* Powiększenie: bazowy font-size skaluje cały układ w rem. */
+html {
+  font-size: calc(var(--a11y-zoom, 100) * 1%);
+}
+
+*,
+::before,
+::after {
+  --tw-ring-offset-color: rgb(var(--surface));
+}
+
 body {
   @apply bg-gov-section text-gov-text antialiased;
+  overflow-wrap: break-word;
 }
 
 :focus-visible {
-  outline-color: #0052a5;
+  outline-color: rgb(var(--focus-ring));
+}
+
+dialog {
+  background-color: rgb(var(--surface));
+  color: rgb(var(--text));
+}
+
+dialog::backdrop,
+.a11y-overlay {
+  background: rgb(0 0 0 / 0.55);
+}
+
+/* Tekst przyjazny dysleksji (WCAG 1.4.8 / 1.4.12). */
+[data-dyslexia="on"] body,
+[data-dyslexia="on"] body * {
+  letter-spacing: 0.06em !important;
+  word-spacing: 0.16em !important;
+  line-height: 1.8 !important;
+  text-align: left !important;
+}
+
+/* Podkreślanie linków (włączane też automatycznie w trybach wysokiego kontrastu — kolor linku = kolor tekstu). */
+[data-underline-links="on"] a,
+[data-underline-links="on"] nav button {
+  text-decoration: underline !important;
+  text-decoration-thickness: 2px !important;
+  text-underline-offset: 0.2em;
+}
+
+/* Ograniczenie animacji — ustawienie użytkownika oraz preferencja systemowa. */
+[data-reduced-motion="on"] *,
+[data-reduced-motion="on"] ::before,
+[data-reduced-motion="on"] ::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Wzmocniony, dwukolorowy obrys fokusu — widoczny na każdym tle. */
+[data-enhanced-focus="on"] :focus-visible {
+  outline: 3px solid rgb(var(--focus-ring)) !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 6px rgb(var(--focus-ring-2)) !important;
+}
+
+/*
+ * Statusy nie polegają wyłącznie na kolorze (WCAG 1.4.1): przy data-status-shapes="on" każdy .a11y-status
+ * dostaje wzór obramowania i ikonę zależną od tonu (ikona jako maska CSS — niewidoczna dla czytników ekranu).
+ */
+[data-status-shapes="on"] .a11y-status {
+  box-shadow: none !important;
+  border: 2px solid currentColor;
+}
+[data-status-shapes="on"] .a11y-status[data-tone="amber"] {
+  border-style: dashed;
+}
+[data-status-shapes="on"] .a11y-status[data-tone="red"] {
+  border: 4px double currentColor;
+}
+[data-status-shapes="on"] .a11y-status[data-tone="blue"] {
+  border-style: dotted;
+}
+[data-status-shapes="on"] .a11y-status[data-tone="slate"] {
+  border-width: 1px;
+}
+[data-status-shapes="on"] .a11y-status[data-tone]::before {
+  content: "";
+  display: inline-block;
+  flex-shrink: 0;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.35em;
+  vertical-align: -0.125em;
+  background-color: currentColor;
+  -webkit-mask: var(--a11y-icon) center / contain no-repeat;
+  mask: var(--a11y-icon) center / contain no-repeat;
+}
+.a11y-status[data-tone="green"] {
+  --a11y-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 12.5l5 5L20 6.5'/%3E%3C/svg%3E");
+}
+.a11y-status[data-tone="amber"] {
+  --a11y-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3L2 21h20z'/%3E%3Cpath d='M12 10v5M12 18v.5'/%3E%3C/svg%3E");
+}
+.a11y-status[data-tone="red"] {
+  --a11y-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='9.5'/%3E%3Cpath d='M8.5 8.5l7 7M15.5 8.5l-7 7'/%3E%3C/svg%3E");
+}
+.a11y-status[data-tone="blue"] {
+  --a11y-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='9.5'/%3E%3Cpath d='M12 11v6M12 7v.5'/%3E%3C/svg%3E");
+}
+.a11y-status[data-tone="slate"] {
+  --a11y-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='5' fill='black'/%3E%3C/svg%3E");
 }

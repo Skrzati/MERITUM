@@ -1,29 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { Alert, Button, Card, Field, inputClass, ProblemAlert } from "@/components/ui";
+import { Alert, Button, Card, Field, inputClass, ProblemAlert, VisibilityBanner } from "@/components/ui";
 import { api, download, saveBlob } from "@/lib/api";
-import { formatDate, today } from "@/lib/labels";
-import type { Cycle, DgDecision, SignatureMethod } from "@/lib/types";
+import { formatDate, SIGNATURE_MODE_LABEL, signatureMode, today } from "@/lib/labels";
+import type { Cycle, DgDecision, SignatureMode } from "@/lib/types";
 import type { CycleView } from "./context";
 import { ScorePicker } from "./ScorePicker";
 
-const SIGNATURES: { method: SignatureMethod; label: string; hint: string }[] = [
-  {
-    method: "MOBYWATEL_QES",
-    label: "Podpis kwalifikowany w mObywatelu (eIDAS 2.0 — symulacja)",
-    hint: "Podpis kwalifikowany z Europejskiego Portfela Tożsamości Cyfrowej — w demo symulowany.",
-  },
-  {
-    method: "PAPER_HYBRID",
-    label: "Tryb hybrydowy — wydruk PDF/A i podpis własnoręczny",
-    hint: "Wydrukuj arkusz PDF/A, podpisz odręcznie i przekaż do kadr.",
-  },
-];
-const SIGNATURE_LABEL: Record<SignatureMethod, string> = {
-  MOBYWATEL_QES: "podpis kwalifikowany (mObywatel, symulacja)",
-  PAPER_HYBRID: "tryb hybrydowy (podpis własnoręczny)",
-  SYSTEM_DEMO: "potwierdzenie w systemie (demo)",
+const SIGNATURE_MODES = Object.keys(SIGNATURE_MODE_LABEL) as SignatureMode[];
+const ACK_BUTTON: Record<SignatureMode, string> = {
+  QUALIFIED_OR_TRUSTED: "Podpisz elektronicznie i potwierdź zapoznanie",
+  INTERNAL_AUDIT_STAMP: "Potwierdź zapoznanie w systemie",
+  HYBRID_PAPER_SCAN: "Potwierdź zapoznanie (podpis odręczny)",
 };
 
 export function AckTab({ view }: { view: CycleView }) {
@@ -37,7 +26,9 @@ export function AckTab({ view }: { view: CycleView }) {
   const [dgComment, setDgComment] = useState("");
   const [dgScores, setDgScores] = useState<Record<string, number>>(cycle.scores ?? {});
   const [dgJustification, setDgJustification] = useState(cycle.justification ?? "");
-  const [signature, setSignature] = useState<SignatureMethod>("MOBYWATEL_QES");
+  const [signature, setSignature] = useState<SignatureMode>("QUALIFIED_OR_TRUSTED");
+  const [paperSignedOn, setPaperSignedOn] = useState(today());
+  const [scanReference, setScanReference] = useState("");
 
   const [courtFiledOn, setCourtFiledOn] = useState(today());
   const [courtCase, setCourtCase] = useState("");
@@ -82,13 +73,37 @@ export function AckTab({ view }: { view: CycleView }) {
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <Card title="Stan zapoznania i sprzeciwu">
+        <div className="mb-4">
+          <VisibilityBanner kind="official" />
+        </div>
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
           <dt className="text-slate-600">Data zapoznania</dt>
           <dd>{formatDate(cycle.acknowledgedAt)}</dd>
           <dt className="text-slate-600">Metoda podpisu</dt>
-          <dd>{cycle.signatureMethod ? SIGNATURE_LABEL[cycle.signatureMethod] : "—"}</dd>
-          <dt className="text-slate-600">Termin na sprzeciw (7 dni)</dt>
-          <dd>{formatDate(cycle.appealDeadline)}</dd>
+          <dd>{cycle.signatureMethod ? SIGNATURE_MODE_LABEL[signatureMode(cycle.signatureMethod)].label : "—"}</dd>
+          {cycle.paperSignedOn && (
+            <>
+              <dt className="text-slate-600">Data podpisu odręcznego</dt>
+              <dd>
+                {formatDate(cycle.paperSignedOn)}
+                {cycle.scanReference ? ` · skan: ${cycle.scanReference}` : ""}
+              </dd>
+            </>
+          )}
+          {cycle.signatureVerificationCode && (
+            <>
+              <dt className="text-slate-600">Kod weryfikacyjny (drukowany na PDF)</dt>
+              <dd className="font-mono font-bold tracking-wider">{cycle.signatureVerificationCode}</dd>
+            </>
+          )}
+          {cycle.signatureHash && (
+            <>
+              <dt className="text-slate-600">Skrót SHA-256 treści arkusza{cycle.signedAt ? ` (${formatDate(cycle.signedAt)})` : ""}</dt>
+              <dd className="break-all font-mono text-xs">{cycle.signatureHash}</dd>
+            </>
+          )}
+          <dt className="text-slate-600">Termin na sprzeciw (7 dni od zapoznania, art. 83 ust. 1)</dt>
+          <dd className="font-semibold">{cycle.appealDeadline ? formatDate(cycle.appealDeadline) : "wyliczany po zapoznaniu"}</dd>
           {cycle.delayReason && (
             <>
               <dt className="text-slate-600">Przyczyna opóźnienia oceny</dt>
@@ -131,13 +146,13 @@ export function AckTab({ view }: { view: CycleView }) {
         <div className="mt-5 border-t border-slate-200 pt-4">
           <div className="flex flex-wrap gap-2">
             <Button onClick={pdf} busy={busy === "pdf"}>
-              ⬇ Pobierz PDF/A (1:1 ze wzorem)
+              ⬇ Pobierz arkusz PDF (1:1 ze wzorem)
             </Button>
             <Button variant="secondary" onClick={pdfPartOne} busy={busy === "pdf1"}>
-              Drukuj tylko Część I
+              Drukuj wyłącznie Część I (PDF)
             </Button>
             <Button variant="secondary" onClick={ezd} busy={busy === "ezd"}>
-              Eksport pakietu pod EZD RP (JSON)
+              Metadane dla EZD RP (JSON)
             </Button>
             <Button
               variant="secondary"
@@ -162,40 +177,69 @@ export function AckTab({ view }: { view: CycleView }) {
             <p className="mb-3 text-sm text-slate-700">Po potwierdzeniu biegnie 7-dniowy termin na wniesienie sprzeciwu do organu: {cycle.appealAuthority.toLowerCase()}.</p>
             <fieldset className="mb-4 space-y-2">
               <legend className="mb-1 text-sm font-medium text-slate-800">Metoda podpisu</legend>
-              {SIGNATURES.map((s) => (
-                <label key={s.method} className="flex items-start gap-2 rounded-md border border-slate-200 p-2 text-sm hover:bg-slate-50">
+              {SIGNATURE_MODES.map((mode) => (
+                <label key={mode} className="flex items-start gap-2 rounded-md border border-slate-200 p-2 text-sm hover:bg-slate-50">
                   <input
                     type="radio"
                     name="signature-method"
                     className="mt-0.5 h-4 w-4 accent-navy-700"
-                    checked={signature === s.method}
-                    onChange={() => setSignature(s.method)}
+                    checked={signature === mode}
+                    onChange={() => setSignature(mode)}
                   />
                   <span>
-                    <span className="font-medium">{s.label}</span>
-                    <span className="block text-xs text-slate-600">{s.hint}</span>
+                    <span className="font-medium">{SIGNATURE_MODE_LABEL[mode].label}</span>
+                    <span className="block text-xs text-slate-600">{SIGNATURE_MODE_LABEL[mode].hint}</span>
                   </span>
                 </label>
               ))}
             </fieldset>
-            {signature === "PAPER_HYBRID" && (
-              <div className="mb-3">
+            {signature === "HYBRID_PAPER_SCAN" && (
+              <div className="mb-3 space-y-3">
                 <Button variant="secondary" onClick={pdf} busy={busy === "pdf"}>
-                  🖨 Pobierz PDF/A do wydruku
+                  🖨 Pobierz PDF do wydruku (z kodem weryfikacyjnym)
                 </Button>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Data podpisu odręcznego (wymagana)">
+                    <input
+                      type="date"
+                      required
+                      max={today()}
+                      className={inputClass}
+                      value={paperSignedOn}
+                      onChange={(e) => setPaperSignedOn(e.target.value)}
+                    />
+                  </Field>
+                  <Field label="Numer skanu w EZD (opcjonalnie)">
+                    <input className={inputClass} maxLength={255} value={scanReference} onChange={(e) => setScanReference(e.target.value)} />
+                  </Field>
+                </div>
               </div>
             )}
             <Button
-              onClick={() => run("ack", () => api<Cycle>(`/api/cycles/${cycle.id}/acknowledge`, { body: { signatureMethod: signature } }))}
+              disabled={signature === "HYBRID_PAPER_SCAN" && !paperSignedOn}
+              onClick={() =>
+                run("ack", () =>
+                  api<Cycle>(`/api/cycles/${cycle.id}/acknowledge`, {
+                    body: {
+                      signatureMethod: signature,
+                      paperSignedOn: signature === "HYBRID_PAPER_SCAN" ? paperSignedOn : null,
+                      scanReference: signature === "HYBRID_PAPER_SCAN" && scanReference.trim() ? scanReference.trim() : null,
+                    },
+                  }),
+                )
+              }
               busy={busy === "ack"}
             >
-              {signature === "MOBYWATEL_QES" ? "Podpisz w mObywatelu i potwierdź zapoznanie" : "Potwierdź zapoznanie (podpis własnoręczny)"}
+              {ACK_BUTTON[signature]}
             </Button>
+            <p className="mt-2 text-xs text-slate-600">
+              Odmowa podpisu nie wstrzymuje biegu terminów — przełożony lub kadry stwierdzają ją w systemie (fikcja zapoznania).
+            </p>
           </Card>
         )}
 
         {cycle.status === "AWAITING_ACK" && (isEvaluator || isOfficeHr) && (
-          <Card title="Odmowa zapoznania (fikcja zapoznania)">
+          <Card title="Odmowa potwierdzenia zapoznania (fikcja zapoznania)">
             <div className="space-y-3">
               <Field label="Powód / okoliczności">
                 <textarea className={inputClass} rows={2} value={refusalReason} onChange={(e) => setRefusalReason(e.target.value)} />
@@ -211,7 +255,7 @@ export function AckTab({ view }: { view: CycleView }) {
                   run("refusal", () => api<Cycle>(`/api/cycles/${cycle.id}/refusal`, { body: { reason: refusalReason, date: refusalDate } }))
                 }
               >
-                Stwierdź odmowę / fikcja zapoznania
+                Stwierdź odmowę potwierdzenia zapoznania
               </Button>
             </div>
           </Card>
@@ -290,7 +334,7 @@ export function AckTab({ view }: { view: CycleView }) {
         )}
 
         {cycle.legalHold && (
-          <Alert tone="red" title="Legal hold — spór przed sądem pracy">
+          <Alert tone="red" title="Blokada archiwalna — spór przed sądem pracy">
             Odwołanie wniesione {formatDate(cycle.courtAppealFiledOn)}
             {cycle.courtCaseReference ? ` (sygn. ${cycle.courtCaseReference})` : ""}. Arkusz i dokumentacja cyklu nie podlegają czyszczeniu ani
             brakowaniu do prawomocnego zakończenia sporu.
@@ -316,7 +360,7 @@ export function AckTab({ view }: { view: CycleView }) {
                 )
               }
             >
-              Zarejestruj odwołanie (legal hold)
+              Zarejestruj odwołanie (blokada archiwalna)
             </Button>
           </Card>
         )}
@@ -331,7 +375,7 @@ export function AckTab({ view }: { view: CycleView }) {
               busy={busy === "court-close"}
               onClick={() => run("court-close", () => api<Cycle>(`/api/cycles/${cycle.id}/court-appeal/close`, { body: { outcome: courtOutcome } }))}
             >
-              Zarejestruj prawomocne zakończenie (zdejmij legal hold)
+              Zarejestruj prawomocne zakończenie (zdejmij blokadę archiwalną)
             </Button>
           </Card>
         )}

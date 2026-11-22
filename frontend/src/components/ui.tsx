@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ApiError } from "@/lib/api";
-import type { AiMode, Problem } from "@/lib/types";
+import type { AiMode, ComplianceMeta, Problem } from "@/lib/types";
 import type { Tone } from "@/lib/labels";
 
 const TONES: Record<Tone, string> = {
@@ -15,8 +15,57 @@ const TONES: Record<Tone, string> = {
 
 export function Badge({ tone = "slate", children }: { tone?: Tone; children: React.ReactNode }) {
   return (
-    <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${TONES[tone]}`}>
+    <span data-tone={tone} className={`a11y-status inline-flex items-center rounded px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${TONES[tone]}`}>
       {children}
+    </span>
+  );
+}
+
+export type StatusKind = "ok" | "warn" | "err" | "info" | "neutral";
+
+/** Odpowiednik tonu z `labels.ts` — ułatwia zamianę `Badge` na `StatusBadge`. */
+export const TONE_STATUS: Record<Tone, StatusKind> = { green: "ok", amber: "warn", red: "err", blue: "info", slate: "neutral" };
+
+const STATUS_STYLE: Record<StatusKind, { className: string; defaultLabel: string; icon: React.ReactNode }> = {
+  ok: {
+    className: "border-2 border-solid border-status-ok bg-status-ok-soft text-status-ok",
+    defaultLabel: "W porządku",
+    icon: <path d="M4 12.5l5 5L20 6.5" />,
+  },
+  warn: {
+    className: "border-2 border-dashed border-status-warn bg-status-warn-soft text-status-warn",
+    defaultLabel: "Uwaga",
+    icon: <path d="M12 3L2 21h20zM12 10v5M12 18v.5" />,
+  },
+  err: {
+    className: "border-4 border-double border-status-err bg-status-err-soft text-status-err",
+    defaultLabel: "Błąd",
+    icon: <path d="M12 2.5a9.5 9.5 0 1 0 0 19 9.5 9.5 0 0 0 0-19zM8.5 8.5l7 7M15.5 8.5l-7 7" />,
+  },
+  info: {
+    className: "border-2 border-dotted border-status-info bg-status-info-soft text-status-info",
+    defaultLabel: "Informacja",
+    icon: <path d="M12 2.5a9.5 9.5 0 1 0 0 19 9.5 9.5 0 0 0 0-19zM12 11v6M12 7v.5" />,
+  },
+  neutral: {
+    className: "border border-solid border-ui-muted bg-ui-surface-2 text-ui-text",
+    defaultLabel: "Brak statusu",
+    icon: <circle cx="12" cy="12" r="4" fill="currentColor" />,
+  },
+};
+
+/**
+ * Status, który nigdy nie polega wyłącznie na kolorze (WCAG 1.4.1): unikalna ikona + wzór obramowania
+ * (ciągłe / przerywane / podwójne / kropkowane) + polska etykieta tekstowa.
+ */
+export function StatusBadge({ status, children }: { status: StatusKind; children?: React.ReactNode }) {
+  const style = STATUS_STYLE[status];
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-xs font-semibold ${style.className}`}>
+      <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+        {style.icon}
+      </svg>
+      <span>{children ?? style.defaultLabel}</span>
     </span>
   );
 }
@@ -82,7 +131,7 @@ export const inputClass =
 
 export function Alert({ tone = "blue", title, children }: { tone?: Tone; title?: string; children?: React.ReactNode }) {
   return (
-    <div role={tone === "red" ? "alert" : "status"} className={`rounded p-3 text-sm ring-1 ring-inset ${TONES[tone]}`}>
+    <div role={tone === "red" ? "alert" : "status"} data-tone={tone} className={`a11y-status rounded p-3 text-sm ring-1 ring-inset ${TONES[tone]}`}>
       {title && <p className="font-semibold">{title}</p>}
       {children && <div className={title ? "mt-1" : ""}>{children}</div>}
     </div>
@@ -113,8 +162,15 @@ export function ProblemAlert({ error }: { error: unknown }) {
 }
 
 export function ModeBadge({ mode }: { mode: AiMode }) {
-  const tone: Tone = mode === "LIVE" ? "green" : "amber";
-  const label = mode === "LIVE" ? "LLM: LIVE" : mode === "MOCK" ? "LLM: MOCK (offline)" : "LLM: MOCK (fallback)";
+  const tone: Tone = mode === "LIVE" || mode === "RULES" ? "green" : "amber";
+  const label =
+    mode === "LIVE"
+      ? "Model AI: aktywny"
+      : mode === "RULES"
+        ? "Reguły deterministyczne (bez modelu AI)"
+        : mode === "MOCK"
+          ? "Model AI: tryb demonstracyjny (bez sieci)"
+          : "Model AI: tryb zastępczy (model niedostępny)";
   return <Badge tone={tone}>{label}</Badge>;
 }
 
@@ -178,5 +234,54 @@ export function Stat({ label, value, hint, tone = "slate" }: { label: string; va
       <p className="mt-1 text-3xl font-bold">{value}</p>
       {hint && <p className="mt-1 text-xs opacity-80">{hint}</p>}
     </div>
+  );
+}
+
+export type Visibility = "private" | "shared-on-send" | "anonymous" | "official";
+
+const VISIBILITY: Record<Visibility, { text: string; icon: React.ReactNode }> = {
+  private: {
+    text: "Prywatne — widoczne wyłącznie dla Ciebie (nie trafia do akt)",
+    icon: <path d="M6 11V8a6 6 0 1 1 12 0v3M5 11h14v10H5z" />,
+  },
+  "shared-on-send": {
+    text: "Udostępniane przełożonemu po kliknięciu „Wyślij” — nie trafia do akt osobowych",
+    icon: <path d="M3 11l18-8-8 18-2-8z" />,
+  },
+  anonymous: {
+    text: "Anonimowe — wyniki zbiorcze widoczne dla HR tylko w grupach min. 5 osób",
+    icon: <path d="M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM2 20c0-3 3-5 6-5s6 2 6 5M14 15c3 0 8 1 8 5" />,
+  },
+  official: {
+    text: "Dokument urzędowy — część B akt osobowych (retencja 10/50 lat)",
+    icon: <path d="M6 2h9l5 5v15H6zM14 2v6h6M9 13h8M9 17h8" />,
+  },
+};
+
+/** Kto zobaczy wpisywane dane — stały baner zaufania nad formularzem. */
+export function VisibilityBanner({ kind }: { kind: Visibility }) {
+  const v = VISIBILITY[kind];
+  return (
+    <p className="flex items-start gap-2 rounded border border-slate-300 bg-slate-50 px-3 py-2 text-sm font-semibold text-gov-text">
+      <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" className="mt-0.5 h-4 w-4 shrink-0 text-gov-blue" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+        {v.icon}
+      </svg>
+      <span>{v.text}</span>
+    </p>
+  );
+}
+
+/** Metadane zgodności z AI Act z odpowiedzi /api/ai/* — przy każdym wyniku asystenta. */
+export function AiComplianceBadge({ meta }: { meta: ComplianceMeta | undefined }) {
+  if (!meta) return null;
+  const count = meta.redactedCount;
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold text-gov-hover" title={meta.disclaimer}>
+      <StatusBadge status={meta.piiAnonymized ? "ok" : "warn"}>
+        {meta.piiAnonymized ? `Dane osobowe zanonimizowane (${count} ${count === 1 ? "pole" : count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 12 || count % 100 > 14) ? "pola" : "pól"})` : "Dane osobowe niezanonimizowane"}
+      </StatusBadge>
+      <span aria-hidden>•</span>
+      <span>Szkic asystenta (AI Act: ostateczną decyzję podejmuje przełożony)</span>
+    </p>
   );
 }
