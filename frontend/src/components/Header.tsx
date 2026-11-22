@@ -18,11 +18,12 @@ const NAV: { href: string; label: string; roles?: Role[] }[] = [
   { href: "/stats", label: "Statystyki", roles: ["DG", "HR"] },
   { href: "/audit", label: "Rejestr zdarzeń", roles: ["HR", "DG", "KPRM_ADMIN"] },
   { href: "/admin", label: "Administracja", roles: ["KPRM_ADMIN"] },
+  { href: "/archive", label: "Archiwum" },
   { href: "/wellbeing", label: "Dobrostan" },
 ];
 
-/** Menu główne: tylko pozycje dostępne dla roli głównej lub dodatkowej, maks. 5 (czytelność). */
-const MAX_NAV_ITEMS = 5;
+/** Menu główne: tylko pozycje dostępne dla roli głównej lub dodatkowej, maks. 6 (czytelność). */
+const MAX_NAV_ITEMS = 6;
 
 function canSee(user: User | null, roles?: Role[]) {
   if (!roles) return true;
