@@ -8,15 +8,16 @@
  */
 :root,
 [data-theme="light"] {
-  --bg: 245 246 247;
+  /* gov.pl / PUE: tło #F4F6F9, karty #FFFFFF z ramką #CBD5E1, granat #0052A5 (hover #003D7A). */
+  --bg: 244 246 249;
   --surface: 255 255 255;
   --surface-2: 241 245 249;
   --text: 27 27 27;
   --text-muted: 64 74 89;
-  --border: 216 222 230;
-  --border-strong: 118 128 142;
+  --border: 203 213 225;
+  --border-strong: 100 116 139;
   --accent: 0 82 165;
-  --accent-hover: 0 59 120;
+  --accent-hover: 0 61 122;
   --accent-soft: 230 240 250;
   --accent-soft-strong: 204 224 245;
   --accent-ink: 0 42 87;
@@ -172,7 +173,20 @@ html {
 
 body {
   @apply bg-gov-section text-gov-text antialiased;
+  font-size: 1rem;
+  line-height: 1.5;
   overflow-wrap: break-word;
+}
+
+/* Sekcje zwijane (CollapsibleSection) — strzałka obraca się przy rozwinięciu, bez znacznika przeglądarki. */
+.gov-collapsible > summary {
+  list-style: none;
+}
+.gov-collapsible > summary::-webkit-details-marker {
+  display: none;
+}
+.gov-collapsible[open] > summary .gov-collapsible-arrow {
+  transform: rotate(180deg);
 }
 
 :focus-visible {

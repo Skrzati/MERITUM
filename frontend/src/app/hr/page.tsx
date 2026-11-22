@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { RoleGate } from "@/components/RoleGate";
-import { Alert, Badge, Button, Card, Field, inputClass, ProblemAlert, Spinner } from "@/components/ui";
+import { Alert, Badge, Button, Card, CollapsibleSection, Field, inputClass, ProblemAlert, Spinner } from "@/components/ui";
 import { useUser } from "@/components/UserProvider";
 import { api, download, saveBlob } from "@/lib/api";
 import { AssignCycleDialog } from "@/components/AssignCycleDialog";
@@ -14,7 +14,7 @@ import { IprzSummaryCard } from "@/components/hr/IprzSummaryCard";
 import { RetentionCard } from "@/components/hr/RetentionCard";
 import { SubstitutionsCard } from "@/components/hr/SubstitutionsCard";
 import { EMPLOYMENT_STATUS_LABEL, escalationLabel, formatDate, roleLabel, today, type Tone } from "@/lib/labels";
-import type { Cycle, EscalationLevel, HandoverResult, ImportResult, OverdueItem, RemovalOutcome, User } from "@/lib/types";
+import type { Cycle, EmploymentStatus, EscalationLevel, HandoverResult, ImportResult, OverdueItem, RemovalOutcome, User } from "@/lib/types";
 import { useAsync } from "@/lib/useAsync";
 
 type SortKey = "fullName" | "email" | "role" | "id";
@@ -35,6 +35,21 @@ export default function HrPage() {
   );
 }
 
+type StatusGroup = "ALL" | "URZEDNIK" | "NIEOKRESLONY" | "OUTSIDE";
+
+const STATUS_GROUPS: { id: StatusGroup; label: string; statuses?: EmploymentStatus[] }[] = [
+  { id: "ALL", label: "Wszyscy" },
+  { id: "URZEDNIK", label: "Urzędnicy SC", statuses: ["URZEDNIK_SC"] },
+  { id: "NIEOKRESLONY", label: "Pracownicy SC (czas nieokreślony)", statuses: ["PRACOWNIK_SC_NIEOKRESLONY"] },
+  {
+    id: "OUTSIDE",
+    label: "Poza oceną okresową (czas określony / wyższe stanowiska)",
+    statuses: ["PRACOWNIK_SC_OKRESLONY", "WYZSZE_STANOWISKO_SC"],
+  },
+];
+
+const inGroup = (u: User, group: (typeof STATUS_GROUPS)[number]) => !group.statuses || group.statuses.includes(u.employmentStatus);
+
 function HrPanel() {
   const { current, reloadUsers } = useUser();
   const [query, setQuery] = useState("");
@@ -45,6 +60,9 @@ function HrPanel() {
     [query, sort, dir, current?.id],
   );
   const list = employees.data ?? [];
+  const [group, setGroup] = useState<StatusGroup>("ALL");
+  const activeGroup = STATUS_GROUPS.find((g) => g.id === group) ?? STATUS_GROUPS[0];
+  const visible = list.filter((u) => inGroup(u, activeGroup));
 
   const [exportError, setExportError] = useState<unknown>(null);
   const gdprExport = async (u: User) => {
@@ -108,7 +126,7 @@ function HrPanel() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gov-text">Panel Kadr</h1>
@@ -144,8 +162,12 @@ function HrPanel() {
       {assigned !== null && <Alert tone="green">Utworzono cykli oceny: {assigned}. Znajdziesz je na Pulpicie.</Alert>}
 
       <HrAlertsCard reloadKey={current?.id} />
-      <IprzSummaryCard reloadKey={current?.id} />
-      <RetentionCard />
+      <CollapsibleSection title="Plan szkoleń z IPRZ" hint="Zestawienie działań rozwojowych z zatwierdzonych programów (art. 108)">
+        <IprzSummaryCard reloadKey={current?.id} />
+      </CollapsibleSection>
+      <CollapsibleSection title="Retencja i dane pomocnicze" hint="Czyszczenie notatek roboczych i ankiet zamkniętych cykli">
+        <RetentionCard />
+      </CollapsibleSection>
 
       <Card title="Zaległości i drabina eskalacji">
         <p className="mb-3 text-sm text-slate-700">
@@ -219,6 +241,21 @@ function HrPanel() {
             </select>
           </Field>
         </div>
+        <div role="group" aria-label="Filtr według statusu zatrudnienia" className="mb-4 flex flex-wrap gap-2">
+          {STATUS_GROUPS.map((g) => (
+            <button
+              key={g.id}
+              type="button"
+              aria-pressed={group === g.id}
+              onClick={() => setGroup(g.id)}
+              className={`min-h-[44px] rounded px-4 text-base font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-gov-blue focus-visible:ring-offset-2 ${
+                group === g.id ? "bg-gov-blue text-white" : "bg-white text-gov-blue ring-1 ring-inset ring-gov-blue hover:bg-gov-light"
+              }`}
+            >
+              {g.label} ({list.filter((u) => inGroup(u, g)).length})
+            </button>
+          ))}
+        </div>
         {employees.loading && <Spinner />}
         <ProblemAlert error={employees.error ?? exportError} />
         {removed && (
@@ -242,7 +279,7 @@ function HrPanel() {
               </tr>
             </thead>
             <tbody>
-              {list.map((u) => (
+              {visible.map((u) => (
                 <tr key={u.id} className="border-b border-slate-100 last:border-0">
                   <td className="py-2 pr-3 font-medium">{u.fullName}</td>
                   <td className="py-2 pr-3">{u.email}</td>
@@ -295,7 +332,9 @@ function HrPanel() {
       {historyOf && <EmployeeHistoryPanel employee={historyOf} onClose={() => setHistoryOf(null)} />}
       {editing && <EmployeeEditDialog employee={editing} employees={list} onClose={() => setEditing(null)} onSaved={refreshAll} />}
 
-      <SubstitutionsCard employees={list} />
+      <CollapsibleSection title="Zastępstwa oceniających" hint="Kto prowadzi oceny pod nieobecność przełożonego">
+        <SubstitutionsCard employees={list} />
+      </CollapsibleSection>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <AbsenceForm employees={list} />

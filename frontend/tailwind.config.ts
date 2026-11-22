@@ -75,6 +75,7 @@ const config: Config = {
           "info-soft": v("accent-soft"),
         },
       },
+      boxShadow: { card: "0 1px 2px rgb(0 0 0 / 0.04)" },
       fontFamily: { sans: ["Lato", "system-ui", "-apple-system", "Segoe UI", "Roboto", "Noto Sans", "Arial", "sans-serif"] },
     },
   },

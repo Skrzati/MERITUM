@@ -49,8 +49,12 @@ export default function WellbeingPage() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="mx-auto max-w-3xl space-y-8">
       <h1 className="text-2xl font-bold text-gov-text">Dobrostan — ankieta dobrowolna</h1>
+      <Alert tone="blue">
+        To jest anonimowa ankieta dobrostanu całego urzędu (wyniki zbiorcze ≥ 5 osób). Jeśli chcesz dodać własne pytania do
+        ankiety przed rozmową oceniającą — otwórz wybrany cykl oceny i wejdź w zakładkę «3. Rozmowa i ankieta».
+      </Alert>
       <VisibilityBanner kind="anonymous" />
 
       <section aria-labelledby="rodo-title" className="rounded border-2 border-gov-blue bg-white p-4">

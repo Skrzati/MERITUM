@@ -8,12 +8,41 @@ import { Badge, Button, Card, ProblemAlert, Spinner } from "@/components/ui";
 import { useUser } from "@/components/UserProvider";
 import { api } from "@/lib/api";
 import { dueState, formatDate, roleLabel, STATUS_LABEL, STATUS_TONE, today } from "@/lib/labels";
-import type { Cycle, Schema, Substitution } from "@/lib/types";
+import type { Cycle, EmploymentStatus, Schema, Substitution, User } from "@/lib/types";
 import { useAsync } from "@/lib/useAsync";
+
+type CycleFilter = "ALL" | "MY_ACTION" | "URZEDNIK" | "PRACOWNIK";
+
+const FILTERS: { id: CycleFilter; label: string }[] = [
+  { id: "ALL", label: "Wszystkie" },
+  { id: "MY_ACTION", label: "Wymagają mojej akcji" },
+  { id: "URZEDNIK", label: "Urzędnicy SC" },
+  { id: "PRACOWNIK", label: "Pracownicy SC" },
+];
+
+const EVALUATOR_ACTION: Cycle["status"][] = ["DRAFT_CRITERIA", "OBSERVATION", "EVALUATION_DRAFT"];
+
+/** Uproszczona podpowiedź dla listy — o uprawnieniach i tak decyduje backend. */
+function needsMyAction(c: Cycle, me: User) {
+  if (c.evaluatorId === me.id) return EVALUATOR_ACTION.includes(c.status);
+  if (c.employeeId === me.id) return c.status === "AWAITING_ACK";
+  if (me.role === "DG") return c.status === "APPEALED";
+  if (me.role === "HR") return c.overdueDays > 0;
+  return false;
+}
+
+const isPracownik = (s?: EmploymentStatus) => s === "PRACOWNIK_SC_NIEOKRESLONY" || s === "PRACOWNIK_SC_OKRESLONY";
+
+function EmploymentTag({ status }: { status?: EmploymentStatus }) {
+  if (status === "URZEDNIK_SC") return <Badge tone="blue">Urzędnik SC</Badge>;
+  if (isPracownik(status)) return <Badge>Pracownik SC</Badge>;
+  if (status === "WYZSZE_STANOWISKO_SC") return <Badge tone="amber">Wyższe stanowisko SC</Badge>;
+  return null;
+}
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { current, users, userName, loading: userLoading, error: userError } = useUser();
+  const { current, users, userName, userById, loading: userLoading, error: userError } = useUser();
   const cycles = useAsync(async () => (current ? api<Cycle[]>("/api/cycles") : []), [current?.id]);
   const schemaIds = useMemo(() => [...new Set((cycles.data ?? []).map((c) => c.schemaVersionId))], [cycles.data]);
   const schemas = useAsync(
@@ -24,6 +53,7 @@ export default function DashboardPage() {
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [actionError, setActionError] = useState<unknown>(null);
+  const [filter, setFilter] = useState<CycleFilter>("ALL");
 
   // Kadry i kierownictwo urzędu — wszyscy pracownicy; kierownik — bezpośredni podwładni.
   const canCreate =
@@ -50,10 +80,17 @@ export default function DashboardPage() {
   if (userError) return <ProblemAlert error={`Brak połączenia z backend-core: ${userError}`} />;
 
   const now = today();
+  const statusOf = (c: Cycle) => userById(c.employeeId)?.employmentStatus;
+  const matches = (f: CycleFilter) => (c: Cycle) =>
+    f === "ALL" ||
+    (f === "MY_ACTION" && !!current && needsMyAction(c, current)) ||
+    (f === "URZEDNIK" && statusOf(c) === "URZEDNIK_SC") ||
+    (f === "PRACOWNIK" && isPracownik(statusOf(c)));
+  const visible = (cycles.data ?? []).filter(matches(filter));
   const mayStartNext = (c: Cycle) => c.status === "COMPLETED" && (current?.role === "HR" || current?.id === c.evaluatorId);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-navy-900">Pulpit</h1>
@@ -96,6 +133,26 @@ export default function DashboardPage() {
         <ProblemAlert error={actionError} />
         {cycles.data && cycles.data.length === 0 && <p className="text-sm text-slate-700">Brak cykli do wyświetlenia.</p>}
         {cycles.data && cycles.data.length > 0 && (
+          <div role="group" aria-label="Filtr listy ocen" className="mb-5 flex flex-wrap gap-2">
+            {FILTERS.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                aria-pressed={filter === f.id}
+                onClick={() => setFilter(f.id)}
+                className={`min-h-[44px] rounded px-4 text-base font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-gov-blue focus-visible:ring-offset-2 ${
+                  filter === f.id ? "bg-gov-blue text-white" : "bg-white text-gov-blue ring-1 ring-inset ring-gov-blue hover:bg-gov-light"
+                }`}
+              >
+                {f.label} ({(cycles.data ?? []).filter(matches(f.id)).length})
+              </button>
+            ))}
+          </div>
+        )}
+        {cycles.data && cycles.data.length > 0 && visible.length === 0 && (
+          <p className="text-base text-slate-700">Brak ocen spełniających wybrany filtr.</p>
+        )}
+        {visible.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <caption className="sr-only">Lista cykli oceny</caption>
@@ -111,7 +168,7 @@ export default function DashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {cycles.data.map((c) => {
+                {visible.map((c) => {
                   const due = dueState(c, now);
                   return (
                     <tr key={c.id} className="border-b border-slate-100 align-top last:border-0">
@@ -119,6 +176,7 @@ export default function DashboardPage() {
                         {userName(c.employeeId)}
                         {c.employeeId === current?.id && <span className="ml-2 text-xs text-slate-600">(Ty)</span>}
                         <div className="mt-1 flex flex-wrap gap-1">
+                          <EmploymentTag status={statusOf(c)} />
                           {c.reevaluation && <Badge tone="amber">ponowna ocena (6 mies.)</Badge>}
                           {c.mandatoryGradeEligible && (
                             <Badge tone="green">Obligatoryjny stopień (art. 89 ust. 2)</Badge>
@@ -143,9 +201,9 @@ export default function DashboardPage() {
                         <div className="flex flex-col items-end gap-2">
                           <Link
                             href={`/cycles/${c.id}`}
-                            className="rounded-md bg-navy-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-navy-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-navy-600"
+                            className="inline-flex min-h-[44px] items-center rounded bg-gov-blue px-5 text-base font-bold text-white hover:bg-gov-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-gov-blue focus-visible:ring-offset-2"
                           >
-                            Otwórz
+                            Otwórz ocenę
                           </Link>
                           {mayStartNext(c) && (
                             <Button variant="secondary" busy={busyId === c.id} onClick={() => startNext(c.id)}>

@@ -72,10 +72,10 @@ export function StatusBadge({ status, children }: { status: StatusKind; children
 
 export function Card({ title, actions, children }: { title?: string; actions?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="rounded border border-slate-200 bg-white p-5">
+    <section className="rounded border border-slate-300 bg-white p-6 shadow-card">
       {(title || actions) && (
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          {title && <h2 className="border-l-4 border-gov-blue pl-3 text-lg font-bold text-gov-text">{title}</h2>}
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
+          {title && <h2 className="border-l-4 border-gov-blue pl-3 text-xl font-bold text-gov-text">{title}</h2>}
           {actions}
         </div>
       )}
@@ -86,8 +86,8 @@ export function Card({ title, actions, children }: { title?: string; actions?: R
 
 type ButtonVariant = "primary" | "secondary" | "danger" | "ai";
 const BUTTONS: Record<ButtonVariant, string> = {
-  primary: "bg-gov-blue text-white hover:bg-gov-hover",
-  secondary: "bg-white text-gov-blue ring-1 ring-inset ring-slate-400 hover:bg-gov-light",
+  primary: "bg-gov-blue text-white shadow-sm hover:bg-gov-hover",
+  secondary: "bg-white text-gov-blue ring-1 ring-inset ring-gov-blue hover:bg-gov-light",
   danger: "bg-red-700 text-white hover:bg-red-800",
   // Asystent AI: niebieski kontur gov.pl zamiast osobnego koloru — AI jest narzędziem pomocniczym, nie decyzją.
   ai: "bg-white text-gov-blue ring-2 ring-inset ring-gov-blue hover:bg-gov-light",
@@ -104,7 +104,7 @@ export function Button({
     <button
       {...props}
       disabled={props.disabled || busy}
-      className={`inline-flex items-center justify-center gap-2 rounded px-3.5 py-2 text-sm font-bold
+      className={`inline-flex min-h-[44px] items-center justify-center gap-2 rounded px-5 py-2 text-base font-bold
         focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-gov-blue
         disabled:cursor-not-allowed disabled:opacity-50 ${BUTTONS[variant]} ${className}`}
     >
@@ -117,16 +117,16 @@ export function Button({
 
 export function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
-    <label className="block text-sm">
-      <span className="mb-1 block font-semibold text-gov-text">{label}</span>
+    <label className="block text-base">
+      <span className="mb-1.5 block font-semibold text-gov-text">{label}</span>
       {children}
-      {hint && <span className="mt-1 block text-xs text-slate-600">{hint}</span>}
+      {hint && <span className="mt-1 block text-sm text-slate-600">{hint}</span>}
     </label>
   );
 }
 
 export const inputClass =
-  "block w-full rounded border border-slate-400 bg-white px-3 py-2 text-sm text-gov-text " +
+  "block min-h-[44px] w-full rounded border border-slate-400 bg-white px-3 py-2 text-base text-gov-text " +
   "focus:border-gov-blue focus:outline-none focus:ring-2 focus:ring-gov-blue/30 disabled:bg-slate-100";
 
 export function Alert({ tone = "blue", title, children }: { tone?: Tone; title?: string; children?: React.ReactNode }) {
@@ -135,6 +135,34 @@ export function Alert({ tone = "blue", title, children }: { tone?: Tone; title?:
       {title && <p className="font-semibold">{title}</p>}
       {children && <div className={title ? "mt-1" : ""}>{children}</div>}
     </div>
+  );
+}
+
+/** Zwijana sekcja w stylu gov.pl (natywne details/summary) — zaawansowane opcje ukryte domyślnie. */
+export function CollapsibleSection({
+  title,
+  hint,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <details open={defaultOpen} className="gov-collapsible rounded border border-slate-300 bg-white">
+      <summary className="flex min-h-[44px] cursor-pointer items-center justify-between gap-3 px-4 py-3 text-base font-bold text-gov-blue hover:bg-gov-light focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gov-blue">
+        <span>
+          {title}
+          {hint && <span className="mt-0.5 block text-sm font-normal text-slate-600">{hint}</span>}
+        </span>
+        <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" className="gov-collapsible-arrow h-5 w-5 shrink-0 transition-transform" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </summary>
+      <div className="border-t border-slate-300 px-4 py-4">{children}</div>
+    </details>
   );
 }
 
