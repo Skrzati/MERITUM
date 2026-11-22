@@ -37,6 +37,8 @@ app:
   auth:
     # nagłówek X-Demo-User-Id (testy/Swagger); w produkcji wyłączyć
     demo-header-enabled: ${DEMO_HEADER_ENABLED:true}
+    # symulowany Węzeł Krajowy (POST /api/auth/gov-login) — tylko demo; w produkcji login.gov.pl / OIDC / SAML
+    gov-login-enabled: ${GOV_LOGIN_ENABLED:false}
     # koszt BCrypt dla kont lokalnych (tryb Mały Urząd)
     bcrypt-strength: ${BCRYPT_STRENGTH:12}
   retention:

@@ -212,6 +212,12 @@ class SmallOfficeIntegrationTest {
                 && m.getText().contains("6 miesięcy"));
     }
 
+    @Test
+    void simulatedGovLoginIsDisabledByDefault() throws Exception {
+        JsonNode problem = send(post("/api/auth/gov-login"), null, "{\"userId\": " + HR + "}", 403);
+        assertThat(problem.toString()).contains("login.gov.pl").doesNotContain("accessToken");
+    }
+
     private List<SimpleMailMessage> sentMails() {
         ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
         verify(mail, atLeastOnce()).send(captor.capture());

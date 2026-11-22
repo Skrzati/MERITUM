@@ -22,7 +22,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /** Migracje V1–V5 na prawdziwym PostgreSQL + walidacja mapowań JPA + kluczowe scenariusze API. */
-@SpringBootTest(properties = "app.jwt.secret=integration-test-secret-integration-test!!")
+@SpringBootTest(properties = {"app.jwt.secret=integration-test-secret-integration-test!!", "app.auth.gov-login-enabled=true"})
 @AutoConfigureMockMvc
 @Testcontainers(disabledWithoutDocker = true)
 class ApiIntegrationTest {

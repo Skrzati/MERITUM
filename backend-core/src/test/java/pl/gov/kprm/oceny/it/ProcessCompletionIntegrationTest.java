@@ -27,7 +27,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * procesowe, mały urząd bez DG, zastępstwa, edycja/anonimizacja w kadrach, historia ocen, ochrona zmiany terminu,
  * pola formularza i tryb korekty. Każdy test używa innych cykli/osób z seedu (kolejność testów dowolna).
  */
-@SpringBootTest(properties = "app.jwt.secret=process-test-secret-process-test-secret!!")
+@SpringBootTest(properties = {"app.jwt.secret=process-test-secret-process-test-secret!!", "app.auth.gov-login-enabled=true"})
 @AutoConfigureMockMvc
 @Testcontainers(disabledWithoutDocker = true)
 class ProcessCompletionIntegrationTest {

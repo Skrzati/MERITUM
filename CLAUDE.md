@@ -50,7 +50,7 @@
 │       │   └── api/          # kontrolery REST, Dtos, Requests, CycleMapper, ApiExceptionHandler (RFC 7807)
 │       └── resources/
 │           ├── application.yml          # konfiguracja przez env (DB_*, GOTENBERG_URL, AI_GATEWAY_URL, JWT_SECRET,
-│           │                            #   DEMO_HEADER_ENABLED, STATS_K_ANONYMITY, MAIL_*, RETENTION_*, BCRYPT_STRENGTH)
+│           │                            #   DEMO_HEADER_ENABLED, GOV_LOGIN_ENABLED, STATS_K_ANONYMITY, MAIL_*, RETENTION_*, BCRYPT_STRENGTH)
 │           └── db/migration/            # Flyway: V1 schemat, V2 seed, V3 workflow + absences, V4 kryteria v1 (§ 4),
 │                                        #   V5 pola wzoru KPRM + historia/dobrostan/zakres/terminy + opisy kryteriów + seed demo,
 │                                        #   V6 delay_reason + signature_method + 2 cykle po terminie (ustalenia z mentorami),
@@ -131,7 +131,8 @@ W sieci Dockera serwisy adresują się po nazwach (`postgres:5432`, `gotenberg:3
 
 ## API (backend-core)
 Uwierzytelnianie: `Authorization: Bearer <JWT>` z `POST /api/auth/gov-login` (symulacja Węzła Krajowego / Profilu
-Zaufanego, HS256), `POST /api/auth/local-login` (konto lokalne urzędu — tryb Mały Urząd, hasło BCrypt) albo — dla
+Zaufanego, HS256; tylko przy `app.auth.gov-login-enabled=true` — domyślnie `false` → 403, w compose `true`),
+`POST /api/auth/local-login` (konto lokalne urzędu — tryb Mały Urząd, hasło BCrypt) albo — dla
 testów/Swaggera — `X-Demo-User-Id` (wyłączane `DEMO_HEADER_ENABLED=false`).
 Publiczne: `/api/health`, `/api/auth/demo-users` (bez e-maili), `/api/auth/gov-login`, `/api/auth/local-login`. Każda odpowiedź ma nagłówki
 `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`
@@ -146,7 +147,7 @@ Stronicowanie (opcjonalne, wstecznie zgodne): `GET /api/cycles`, `/api/hr/employ
 |---|---|---|---|
 | GET | `/api/health` | wszyscy | status |
 | GET | `/api/auth/demo-users`, `/api/auth/me` | wszyscy | logowanie demo; demo-users → `DemoUserDto` (bez e-maila i dat kadrowych) |
-| POST | `/api/auth/gov-login` | wszyscy | `{"userId"}` → `{accessToken, tokenType: "Bearer", expiresIn, identityProvider, user}` |
+| POST | `/api/auth/gov-login` | wszyscy | `{"userId"}` → `{accessToken, tokenType: "Bearer", expiresIn, identityProvider, user}`; przy `app.auth.gov-login-enabled=false` (domyślnie) 403 — w produkcji login.gov.pl / OIDC / SAML albo konto lokalne |
 | POST | `/api/auth/local-login` | wszyscy | `{login (e-mail), password}` → jak gov-login (`identityProvider: LOCAL`); tylko aktywne konto z hasłem w urzędzie z `local_auth_enabled`; 401 bez rozróżnienia przyczyny, audyt `LOGIN_FAILED` |
 | GET | `/api/admin/offices`, PATCH `/api/admin/offices/{id}/local-auth` | KPRM_ADMIN (HR: GET własny) | urzędy; `{enabled}` włącza tryb Mały Urząd (audyt `LOCAL_AUTH_TOGGLED`) |
 | GET/POST | `/api/admin/accounts[?officeId=]` | KPRM_ADMIN (dowolny urząd, `officeId` wymagany), HR (własny) | `AccountDto {user, hasLocalPassword, passwordChangedAt}`; POST `{officeId?, firstName, lastName, email, role (bez KPRM_ADMIN), employmentStatus?, supervisorId?, department?, positionTitle?, password?}`; audyt `ACCOUNT_CREATED` |
@@ -336,6 +337,8 @@ Hibernate `ddl-auto: validate` — schemat zmienia WYŁĄCZNIE Flyway.
   Seed nie zawiera haseł.
 - E-mail (`MailNotifier`): wysyłka po commicie transakcji (`@TransactionalEventListener`), błąd SMTP nie przerywa procesu;
   audyt `EMAIL_SENT` z liczbą odbiorców (bez adresów). Domyślnie wyłączony (`MAIL_ENABLED=false`), w compose — Mailpit.
+- Symulowane logowanie (`gov-login`) wyłączone domyślnie (`GOV_LOGIN_ENABLED=false`); testy, które go używają,
+  ustawiają `app.auth.gov-login-enabled=true`.
 - Ankieta dobrostanu: dobrowolna, technicznie anonimowa (bez `user_id`, czas z dokładnością do dnia), bez audytu
   i bez powiązania z cyklem; widoczna wyłącznie zbiorczo.
 - Porty hosta: tylko frontend (3000) i backend-core (8080); Postgres na 127.0.0.1, Gotenberg i ai-gateway wyłącznie w sieci

@@ -27,7 +27,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Testy ataków na API: IDOR (cudze cykle), eskalacja uprawnień, izolacja urzędów (multi-tenant),
  * wstrzyknięcia w parametry wyszukiwania i sortowania, sfałszowane uwierzytelnienie.
  */
-@SpringBootTest(properties = "app.jwt.secret=security-test-secret-security-test-secret!!")
+@SpringBootTest(properties = {"app.jwt.secret=security-test-secret-security-test-secret!!", "app.auth.gov-login-enabled=true"})
 @AutoConfigureMockMvc
 @Testcontainers(disabledWithoutDocker = true)
 class SecurityIntegrationTest {

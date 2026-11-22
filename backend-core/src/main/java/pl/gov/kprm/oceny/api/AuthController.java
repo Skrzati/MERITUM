@@ -1,7 +1,7 @@
 package pl.gov.kprm.oceny.api;
 
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 import pl.gov.kprm.oceny.api.Dtos.DemoUserDto;
 import pl.gov.kprm.oceny.api.Dtos.LoginResponse;
@@ -25,18 +25,31 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/auth")
-@RequiredArgsConstructor
 public class AuthController {
     /** Symulacja logowania przez Węzeł Krajowy / Profil Zaufany — środowisko demonstracyjne. */
     static final String IDENTITY_PROVIDER = "SIMULATED_WK_PZ";
     /** Konto lokalne urzędu (tryb Mały Urząd) — login i hasło BCrypt. */
     static final String LOCAL_PROVIDER = "LOCAL";
+    static final String GOV_LOGIN_DISABLED = "Symulowane logowanie jest wyłączone. W środowisku produkcyjnym wymagane "
+            + "jest logowanie przez login.gov.pl (OIDC / SAML) albo konto lokalne urzędu.";
 
     private final UserRepository users;
     private final OfficeRepository offices;
     private final JwtService jwt;
     private final AuditService audit;
     private final LocalAccountService localAccounts;
+    private final boolean govLoginEnabled;
+
+    public AuthController(UserRepository users, OfficeRepository offices, JwtService jwt, AuditService audit,
+                          LocalAccountService localAccounts,
+                          @Value("${app.auth.gov-login-enabled:false}") boolean govLoginEnabled) {
+        this.users = users;
+        this.offices = offices;
+        this.jwt = jwt;
+        this.audit = audit;
+        this.localAccounts = localAccounts;
+        this.govLoginEnabled = govLoginEnabled;
+    }
 
     @GetMapping("/demo-users")
     public List<DemoUserDto> demoUsers() {
@@ -46,6 +59,9 @@ public class AuthController {
 
     @PostMapping("/gov-login")
     public LoginResponse govLogin(@Valid @RequestBody GovLoginRequest req) {
+        if (!govLoginEnabled) {
+            throw Access.forbidden(GOV_LOGIN_DISABLED);
+        }
         User user = users.findById(req.userId()).orElseThrow(() -> Access.notFound("Użytkownik", req.userId()));
         if (!user.isActive()) {
             throw Access.forbidden("Konto jest nieaktywne");
